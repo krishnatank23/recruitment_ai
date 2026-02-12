@@ -1,0 +1,220 @@
+/* ── Recruiter Page (CRM) ── */
+
+.recruiter-page {
+    max-width: 900px;
+}
+
+.recruiter-header {
+    margin-bottom: 4px;
+}
+
+.recruiter-header h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 2px;
+}
+
+/* Section heading */
+.section-heading {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--slate-800);
+    margin-bottom: 12px;
+}
+
+/* Step content */
+.step-content {
+    margin-bottom: 16px;
+}
+
+/* Navigation row */
+.step-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 20px;
+}
+
+/* Role info chips */
+.role-info {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.role-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    background: var(--slate-100);
+    border-radius: var(--radius-full);
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--slate-600);
+}
+
+/* Questions */
+.question-block {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--slate-100);
+}
+
+.question-block:last-child {
+    border-bottom: none;
+}
+
+.question-text {
+    color: var(--text-primary);
+    margin-bottom: 10px;
+    font-size: 0.813rem;
+}
+
+.options-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.option-btn {
+    padding: 5px 12px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    font-family: inherit;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-full);
+    background: white;
+    color: var(--slate-600);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.option-btn:hover {
+    border-color: var(--indigo-400);
+    color: var(--accent-primary);
+}
+
+.option-btn.selected {
+    background: var(--indigo-50);
+    border-color: var(--indigo-500);
+    color: var(--indigo-700);
+    font-weight: 600;
+}
+
+/* Profile hero */
+.profile-hero {
+    background: var(--accent-gradient);
+    border-radius: var(--radius-lg);
+    padding: 20px 24px;
+    margin-bottom: 16px;
+}
+
+.profile-hero-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: white;
+}
+
+.profile-hero-sub {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.8);
+    margin-top: 4px;
+}
+
+.chip-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 4px;
+}
+
+.skill-list {
+    list-style: none;
+    padding: 0;
+}
+
+.skill-list li {
+    padding: 4px 0;
+    font-size: 0.813rem;
+    color: var(--slate-700);
+    border-bottom: 1px solid var(--slate-100);
+}
+
+.skill-list li:last-child {
+    border-bottom: none;
+}
+
+.skill-list li::before {
+    content: '›';
+    margin-right: 6px;
+    color: var(--accent-primary);
+    font-weight: 700;
+}
+
+/* Chat */
+.chat-history {
+    max-height: 240px;
+    overflow-y: auto;
+    margin-bottom: 12px;
+}
+
+.chat-pair {
+    margin-bottom: 6px;
+}
+
+.chat-bubble {
+    padding: 8px 12px;
+    border-radius: var(--radius-md);
+    font-size: 0.75rem;
+    margin-bottom: 3px;
+}
+
+.chat-bubble.user {
+    background: var(--indigo-50);
+    color: var(--indigo-800);
+}
+
+.chat-bubble.system {
+    background: var(--green-50);
+    color: var(--green-700);
+}
+
+.chat-input-row {
+    display: flex;
+    gap: 8px;
+}
+
+.chat-text-input {
+    flex: 1;
+}
+
+/* JD Details */
+.jd-details {
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.jd-details summary {
+    padding: 10px 14px;
+    font-weight: 600;
+    font-size: 0.813rem;
+    color: var(--slate-700);
+    cursor: pointer;
+    background: var(--slate-50);
+    border-bottom: 1px solid var(--border-default);
+    user-select: none;
+}
+
+.jd-details summary:hover {
+    background: var(--slate-100);
+}
+
+.jd-details-body {
+    padding: 16px;
+}
+
+.jd-details-body .card {
+    box-shadow: none;
+    border: none;
+}

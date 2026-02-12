@@ -104,12 +104,6 @@ Use "nice_to_have_skills" from the Profile.
 Use "behavioral_traits" and "core_competencies" from the Profile.
 Write 2–3 sentences about the mindset and behaviors needed.
 
-## Success Metrics
-Use "success_metrics" from the Profile.
-Write 3 bullets: 30-day, 90-day, and 6-month milestones.
-
-## How to Apply
-1–2 sentence paragraph with application instructions.
 
 ─────────────────────────────
 IDEAL CANDIDATE PROFILE (PRIMARY SOURCE):

@@ -1,0 +1,134 @@
+/* ── TopBar ── */
+.topbar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 56px;
+    padding: 0 24px;
+    background: #fff;
+    border-bottom: 1px solid var(--slate-200);
+}
+
+/* Left — Breadcrumbs */
+.topbar-left {
+    display: flex;
+    align-items: center;
+}
+
+.topbar-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.875rem;
+}
+
+.breadcrumb-root {
+    color: var(--slate-400);
+    font-weight: 500;
+}
+
+.breadcrumb-sep {
+    color: var(--slate-300);
+}
+
+.breadcrumb-current {
+    color: var(--slate-800);
+    font-weight: 600;
+}
+
+/* Right — Search, Notifications, Avatar */
+.topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.topbar-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.topbar-search-icon {
+    position: absolute;
+    left: 10px;
+    color: var(--slate-400);
+    pointer-events: none;
+}
+
+.topbar-search-input {
+    width: 200px;
+    padding: 7px 12px 7px 32px;
+    font-size: 0.813rem;
+    font-family: inherit;
+    border: 1px solid var(--slate-200);
+    border-radius: 8px;
+    background: var(--slate-50);
+    color: var(--slate-700);
+    outline: none;
+    transition: all var(--transition-fast);
+}
+
+.topbar-search-input:focus {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.1);
+    background: #fff;
+}
+
+.topbar-search-input::placeholder {
+    color: var(--slate-400);
+}
+
+/* Icon button */
+.topbar-icon-btn {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--slate-500);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.topbar-icon-btn:hover {
+    background: var(--slate-100);
+    color: var(--slate-700);
+}
+
+.topbar-notif-dot {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--red-500);
+    border: 1.5px solid #fff;
+}
+
+/* Avatar */
+.topbar-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--indigo-500), var(--violet-500));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.avatar-initials {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.02em;
+}
