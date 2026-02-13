@@ -42,6 +42,13 @@ export async function generateJd(payload) {
     });
 }
 
+export async function suggestRoles(profile, instruction = null) {
+    return request('/jd/jd/suggest-roles', {
+        method: 'POST',
+        body: JSON.stringify({ profile, instruction }),
+    });
+}
+
 export async function refineJd(payload) {
     return request('/jd/jd/refine', {
         method: 'POST',

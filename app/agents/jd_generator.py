@@ -63,63 +63,108 @@ def _format_experience(exp_raw: str) -> str:
 # Prompt (uses Profile Builder output)
 # --------------------------------------------------
 JD_GENERATOR_PROMPT = """
-Create a professional Job Description for WOGOM using the structure below.
-You are given an "Ideal Candidate Profile" built by our Profile Builder agent — use it as your PRIMARY source of truth.
+You are a senior HR and talent acquisition expert at WOGOM.
 
-COMPANY BRAND GUIDELINES:
+Your task is to generate a clean, professional, hiring-ready Job Description (JD).
+
+─────────────────────────────
+🔴 CRITICAL SOURCE OF TRUTH 🔴
+─────────────────────────────
+The **IDEAL CANDIDATE PROFILE** below is your **SINGLE SOURCE OF TRUTH**.
+- You MUST use the exact content from this profile (responsibilities, skills, traits).
+- The Google Form data is ONLY for metadata (Location, CTC, etc.).
+- If the Form data contradicts the Profile, **IGNORE THE FORM DATA**.
+- Do NOT hallucinate or invent new requirements.
+
+─────────────────────────────
+IDEAL CANDIDATE PROFILE (PRIMARY)
+─────────────────────────────
+{profile_json}
+
+─────────────────────────────
+METADATA & CONTEXT
+─────────────────────────────
+Role: {role}
+Department: {department}
+Location: {location}
+Experience: {experience_phrase}
+Employment Type: {employment_type}
+
+GOOGLE FORM DATA (SECONDARY - Metadata Only):
+{facts}
+
+─────────────────────────────
+COMPANY BRAND GUIDELINES
+─────────────────────────────
 Mission: {mission}
 Vision: {vision}
 Tone: {tone}
 Culture: {culture}
 Language Rules: {language_rules}
 
+─────────────────────────────
+OUTPUT FORMAT (STRICTLY FOLLOW)
+─────────────────────────────
+
 # {role}
 
-Location: {location}
-Experience: {experience_phrase}
-Type: {employment_type}
+**Location:** {location}
+**Type:** {employment_type}
 
 ## About Us
+Use the provided About WOGOM content exactly as given. Do not rewrite it.
+
 {about_wogom}
 
 ## Role Overview
-Write 2–3 sentences explaining the role's purpose and direct impact on WOGOM's mission.
-Use the Profile Summary from the Ideal Candidate Profile below.
+Write 2–3 concise sentences explaining:
+- The purpose of the role
+- Its direct impact on WOGOM’s mission
+Base this **ONLY** on the `profile_summary` from the Profile.
 
 ## Key Responsibilities
-Use the "key_responsibilities_refined" from the Profile as ground truth.
-Write 4–6 bullets. Each bullet: TWO concise sentences. Start with "• ".
+Use **ONLY** `key_responsibilities_refined` from the Profile.
+Write 5–7 bullet points.
+
+STRICT BULLET RULES:
+- **ONE LINE ONLY** per bullet.
+- **MAXIMUM 30 words** per bullet.
+- Start with "• "
+- Focus on outcomes and ownership.
+- Do NOT use multiple sentences in one bullet.
+- Do NOT use sub-bullets.
 
 ## Requirements
 
 ### Must-Have Skills
-Use "must_have_skills_refined" from the Profile.
-Write 4–6 bullets. Each bullet: TWO concise sentences explaining proficiency and why it matters.
+Use **ONLY** `must_have_skills_refined` and `core_competencies` from the Profile.
+Write 4–6 bullet points.
+
+STRICT BULLET RULES:
+- **ONE LINE ONLY** per bullet.
+- Start with "• "
+- explain proficiency level briefly.
 
 ### Nice-to-Have Skills
-Use "nice_to_have_skills" from the Profile.
-2–3 bullets.
+Use **ONLY** `nice_to_have_skills` from the Profile.
+Write 2–3 concise bullet points.
+
+STRICT BULLET RULES:
+- **ONE LINE ONLY** per bullet.
 
 ## Who Will Succeed in This Role
-Use "behavioral_traits" and "core_competencies" from the Profile.
-Write 2–3 sentences about the mindset and behaviors needed.
+Use **ONLY**:
+- `behavioral_traits`
+- `success_metrics`
 
+Write 2–3 sentences describing the mindset and work ethic required. Do NOT repeat earlier content.
 
 ─────────────────────────────
-IDEAL CANDIDATE PROFILE (PRIMARY SOURCE):
-{profile_json}
+FINAL CHECKLIST
 ─────────────────────────────
-
-GOOGLE FORM DATA (SECONDARY SOURCE):
-{facts}
-─────────────────────────────
-
-RULES:
-- The Profile is your PRIMARY source. The form data is SECONDARY (for any missing details).
-- Use "• " for bullets. Each bullet on its own line.
-- Title: `# {{role}}`, sections: `##`.
-- Follow WOGOM tone: professional, clear, no jargon.
-- Do NOT add extra sections.
+- Did you use the Profile as the source of truth?
+- Are all bullets SINGLE LINE?
+- Is the tone professional?
 - Output ONLY the formatted JD.
 """
 
@@ -128,17 +173,18 @@ RULES:
 # Normalize bullets
 # --------------------------------------------------
 def normalize_bullets(text: str) -> str:
+    """Normalize all bullet styles to standard markdown `- ` for proper rendering."""
     lines = []
     for line in text.splitlines():
         line = line.rstrip()
         stripped = line.lstrip()
-        if stripped.startswith(("-", "*")) and not stripped.startswith(("##", "#")):
+        if stripped.startswith(("-", "*")) and not stripped.startswith(("##", "#", "---", "***")):
             content = stripped.lstrip("-* ").strip()
-            lines.append("• " + content)
+            lines.append("- " + content)
             continue
         if stripped.startswith("•"):
             content = stripped.lstrip("• ").strip()
-            lines.append("• " + content)
+            lines.append("- " + content)
             continue
         lines.append(line)
     return "\n".join(lines)
@@ -209,8 +255,39 @@ def generate_jd(form_data: Dict, profile: Dict = None) -> str:
 
     # Experience
     experience_phrase = _format_experience(data.get("experience", ""))
+    # Intent summary from form data
+    intent_summary = data.get("intent_summary", "Generate a professional, concise JD for this role.")
+
+    # Prepare facts (Google Form Data)
+    # If a profile exists, we want to HIDE conflicts (responsibilities, skills) from the raw form data
+    # and only show metadata (CTC, Notice Period, etc.)
+    if profile:
+        excluded_keys = [
+            "role", "department", "experience", "key_responsibilities",
+            "must_have_skills", "nice_to_have_skills", "other_skills",
+            "profile_summary"
+        ]
+        facts_list = []
+        for k, v in data.items():
+            if k not in excluded_keys and v:
+                if isinstance(v, list):
+                    facts_list.append(f"{k}: {', '.join(v)}")
+                else:
+                    facts_list.append(f"{k}: {v}")
+        facts = "\n".join(facts_list) if facts_list else "(No additional metadata)"
+    else:
+        # Fallback: show everything if no profile
+        facts_list = []
+        for k, v in data.items():
+            if k not in ["role", "department", "experience"] and v:
+                if isinstance(v, list):
+                    facts_list.append(f"{k}: {', '.join(v)}")
+                else:
+                    facts_list.append(f"{k}: {v}")
+        facts = "\n".join(facts_list) if facts_list else "(No additional metadata)"
 
     # Profile JSON (from Agent 2)
+    print(f"\n[JD_GENERATOR DEBUG] Received Profile: {json.dumps(profile, indent=2)}")
     profile_json = json.dumps(profile, indent=2) if profile else "{}"
 
     prompt = JD_GENERATOR_PROMPT.format(
@@ -220,6 +297,7 @@ def generate_jd(form_data: Dict, profile: Dict = None) -> str:
         culture=culture,
         language_rules=language_rules,
         role=data["role"],
+        department=data.get("department", ""),
         location=data["location"],
         experience_phrase=experience_phrase,
         employment_type=data["employment_type"],

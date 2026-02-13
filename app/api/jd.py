@@ -5,6 +5,7 @@ from app.agents.jd_generator import generate_jd
 from app.agents.jd_clarifier import generate_clarifying_questions
 from app.agents.jd_chatbot import refine_jd
 from app.agents.profile_builder import build_profile
+from app.agents.role_suggester import suggest_roles
 import json
 import os
 import gspread
@@ -49,36 +50,48 @@ def get_roles():
     if not service_account_json:
         return []
 
-    service_account_info = json.loads(service_account_json)
-    creds = Credentials.from_service_account_info(service_account_info, scopes=scopes)
-    client = gspread.authorize(creds)
+    try:
+        service_account_info = json.loads(service_account_json)
+        creds = Credentials.from_service_account_info(service_account_info, scopes=scopes)
+        client = gspread.authorize(creds)
 
-    SPREADSHEET_ID = "1SpNGsY707CaY6i06knI9F2HJdtAcHxGKq8IjAb17oWo"
-    sheet = client.open_by_key(SPREADSHEET_ID).sheet1
-    df = pd.DataFrame(sheet.get_all_records())
-    df.columns = [c.strip().lower() for c in df.columns]
+        SPREADSHEET_ID = "1SpNGsY707CaY6i06knI9F2HJdtAcHxGKq8IjAb17oWo"
+        sheet = client.open_by_key(SPREADSHEET_ID).sheet1
+        df = pd.DataFrame(sheet.get_all_records())
+        df.columns = [c.strip().lower() for c in df.columns]
 
-    result = []
-    for _, row in df.iterrows():
-        result.append({
-            "role": row.get("job title ( example: ai engineer, sales executive, hr manager)", ""),
-            "department": row.get("in which department (ex. marketing, tech etc.)", ""),
-            "location": row.get("location", ""),
-            "employment_type": row.get("employment type ( full-time / contract / internship )", "Full-time"),
-            "travel_required": row.get("does this role require travel?", ""),
-            "work_mode": row.get("work mode", ""),
-            "key_responsibilities": row.get("key responsibilities  ( list 4–6 things this person will actually do)", ""),
-            "reporting_to": row.get("reporting to (example: tech lead, sales manager)", ""),
-            "new_or_scaling": row.get("is this role building something new or scaling an existing function?", ""),
-            "must_have_skills": row.get("top 3 skills this role must have", ""),
-            "other_skills": row.get("other skills ( example: python, excel, communication )", ""),
-            "minimum_education": row.get("minimum education required", ""),
-            "experience": row.get("minimum experience required", ""),
-            "urgency": row.get("how urgent is this hire?", ""),
-            "salary": row.get("salary range (optional)", ""),
-        })
+        result = []
+        for _, row in df.iterrows():
+            result.append({
+                "role": row.get("job title ( example: ai engineer, sales executive, hr manager)", ""),
+                "department": row.get("in which department (ex. marketing, tech etc.)", ""),
+                "location": row.get("location", ""),
+                "employment_type": row.get("employment type ( full-time / contract / internship )", "Full-time"),
+                "travel_required": row.get("does this role require travel?", ""),
+                "work_mode": row.get("work mode", ""),
+                "key_responsibilities": row.get("key responsibilities  ( list 4–6 things this person will actually do)", ""),
+                "reporting_to": row.get("reporting to (example: tech lead, sales manager)", ""),
+                "new_or_scaling": row.get("is this role building something new or scaling an existing function?", ""),
+                "must_have_skills": row.get("top 3 skills this role must have", ""),
+                "other_skills": row.get("other skills ( example: python, excel, communication )", ""),
+                "minimum_education": row.get("minimum education required", ""),
+                "experience": row.get("minimum experience required", ""),
+                "urgency": row.get("how urgent is this hire?", ""),
+                "salary": row.get("salary range (optional)", ""),
+            })
+        return result
 
-    return result
+    except Exception as e:
+        print(f"[JD API] Google Sheets Error (using fallback): {e}")
+        # Fallback roles if API fails
+        return [
+            {"role": "Frontend Engineer", "department": "Technology", "location": "Remote", "employment_type": "Full-time"},
+            {"role": "Backend Engineer", "department": "Technology", "location": "Remote", "employment_type": "Full-time"},
+            {"role": "Product Manager", "department": "Product", "location": "Hybrid", "employment_type": "Full-time"},
+            {"role": "Sales Executive", "department": "Sales", "location": "On-site", "employment_type": "Full-time"},
+            {"role": "HR Manager", "department": "Human Resources", "location": "Hybrid", "employment_type": "Full-time"},
+            {"role": "Marketing Specialist", "department": "Marketing", "location": "Remote", "employment_type": "Full-time"},
+        ]
 
 @router.post("/clarify")
 def clarify_jd_api(payload: dict):
@@ -99,6 +112,15 @@ def profile_builder_api(payload: dict):
         clarification_answers=payload.get("answers", [])
     )
     return {"profile": profile}
+
+
+@router.post("/suggest-roles")
+def suggest_roles_api(payload: dict):
+    """Suggest alternative role names from the profile."""
+    profile = payload.get("profile", {})
+    instruction = payload.get("instruction", None)
+    suggestions = suggest_roles(profile, instruction)
+    return {"suggestions": suggestions}
 
 
 @router.post("/generate")
