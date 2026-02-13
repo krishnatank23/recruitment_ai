@@ -1,4 +1,5 @@
 #jd parser
+#extract raw data from jd for cv matching
 import re
 import json
 from typing import List, Dict
@@ -26,13 +27,13 @@ You are an information extraction system.
 Extract structured data from the Job Description below.
 
 Return ONLY valid JSON in this schema:
-{
+{{
   "role": string,
   "must_have_skills": list of strings,
   "nice_to_have_skills": list of strings,
   "experience_years": number,
   "responsibilities": list of strings
-}
+}}
 
 Job Description:
 {jd_text}

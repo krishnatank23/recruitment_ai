@@ -66,6 +66,11 @@ JD_GENERATOR_PROMPT = """
 Create a professional Job Description for WOGOM using the structure below.
 You are given an "Ideal Candidate Profile" built by our Profile Builder agent — use it as your PRIMARY source of truth.
 
+CONTEXT:
+- Role: {role}
+- Department: {department}
+- Profile Built From: {profile_context}
+
 COMPANY BRAND GUIDELINES:
 Mission: {mission}
 Vision: {vision}
@@ -76,7 +81,6 @@ Language Rules: {language_rules}
 # {role}
 
 Location: {location}
-Experience: {experience_phrase}
 Type: {employment_type}
 
 ## About Us
@@ -87,29 +91,24 @@ Write 2–3 sentences explaining the role's purpose and direct impact on WOGOM's
 Use the Profile Summary from the Ideal Candidate Profile below.
 
 ## Key Responsibilities
-Use the "key_responsibilities_refined" from the Profile as ground truth.
-Write 4–6 bullets. Each bullet: TWO concise sentences. Start with "• ".
+Use the "key_responsibilities" from the Profile as ground truth.
+Write 5–7 bullets. Each bullet: MAXIMUM 1 to 1.5 lines (ONE concise sentence, max 15-20 words).
+Start with "• ".
+Focus on the core actions and outcomes specific to this {role} in {department}.
 
 ## Requirements
 
 ### Must-Have Skills
-Use "must_have_skills_refined" from the Profile.
-Write 4–6 bullets. Each bullet: TWO concise sentences explaining proficiency and why it matters.
+Use "must_have" from the Profile.
+Write 4–6 bullets. Each bullet: ONE to TWO concise sentences explaining proficiency and why it matters for this role.
 
 ### Nice-to-Have Skills
-Use "nice_to_have_skills" from the Profile.
+Use "nice_to_have" from the Profile.
 2–3 bullets.
 
 ## Who Will Succeed in This Role
-Use "behavioral_traits" and "core_competencies" from the Profile.
-Write 2–3 sentences about the mindset and behaviors needed.
-
-## Success Metrics
-Use "success_metrics" from the Profile.
-Write 3 bullets: 30-day, 90-day, and 6-month milestones.
-
-## How to Apply
-1–2 sentence paragraph with application instructions.
+Use "personality_profile" and "dealbreakers" from the Profile.
+Write 2–3 sentences about the mindset, behaviors, and traits needed for this {role}.
 
 ─────────────────────────────
 IDEAL CANDIDATE PROFILE (PRIMARY SOURCE):
@@ -122,10 +121,20 @@ GOOGLE FORM DATA (SECONDARY SOURCE):
 
 RULES:
 - The Profile is your PRIMARY source. The form data is SECONDARY (for any missing details).
-- Use "• " for bullets. Each bullet on its own line.
-- Title: `# {{role}}`, sections: `##`.
+- KEEP KEY RESPONSIBILITIES SHORT (max 1–1.5 lines per bullet).
+- Use "• " for bullets. Each bullet on new line.
+- USE THIS EXACT HEADING ORDER:
+  1) # {role}
+  2) Location / Type
+  3) ## About Us
+  4) ## Role Overview
+  5) ## Key Responsibilities
+  6) ## Requirements
+  7) ### Must-Have Skills
+  8) ### Nice-to-Have Skills
+  9) ## Who Will Succeed in This Role
 - Follow WOGOM tone: professional, clear, no jargon.
-- Do NOT add extra sections.
+- Do NOT add extra sections or subsections.
 - Output ONLY the formatted JD.
 """
 
@@ -134,6 +143,16 @@ RULES:
 # Normalize bullets
 # --------------------------------------------------
 def normalize_bullets(text: str) -> str:
+    # Split inline bullets into separate lines (e.g., "A • B • C")
+    text = re.sub(r"\s+[•\u2022]\s+", r"\n• ", text)
+    text = re.sub(r"\s+-\s+(?=[A-Za-z])", r"\n• ", text)
+
+    # Ensure major headings are on their own lines
+    text = re.sub(r"\s*(##\s+Key Responsibilities)\s*", r"\n\n\1\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*(##\s+Requirements)\s*", r"\n\n\1\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*(###\s+Must-Have Skills)\s*", r"\n\n\1\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*(###\s+Nice-to-Have Skills)\s*", r"\n\n\1\n", text, flags=re.IGNORECASE)
+
     lines = []
     for line in text.splitlines():
         line = line.rstrip()
@@ -147,7 +166,48 @@ def normalize_bullets(text: str) -> str:
             lines.append("• " + content)
             continue
         lines.append(line)
-    return "\n".join(lines)
+    normalized = "\n".join(lines)
+    normalized = re.sub(r"\n{3,}", "\n\n", normalized)
+    return normalized
+
+def _ensure_jd_structure(content: str, role: str, location: str, experience_phrase: str, employment_type: str, department: str) -> str:
+    """Guarantee draft JD has the same core structure as final JD."""
+    text = (content or "").strip()
+    if not text:
+        text = f"# {role}"
+
+    required_blocks = [
+        f"# {role}",
+        f"Location: {location}",
+        f"Experience: {experience_phrase}",
+        f"Type: {employment_type}",
+        f"Department: {department}",
+        "## About Us",
+        "## Role Overview",
+        "## Key Responsibilities",
+        "## Requirements",
+        "### Must-Have Skills",
+        "### Nice-to-Have Skills",
+        "## Who Will Succeed in This Role",
+    ]
+
+    # Ensure title is standardized at the top
+    lines = text.splitlines()
+    if not lines or not lines[0].startswith("# "):
+        text = f"# {role}\n\n{text}".strip()
+    elif lines[0].strip() != f"# {role}":
+        lines[0] = f"# {role}"
+        text = "\n".join(lines)
+
+    # Append missing required blocks
+    for block in required_blocks[1:]:
+        if block not in text:
+            if block.startswith("## ") or block.startswith("### "):
+                text += f"\n\n{block}\n"
+            else:
+                text += f"\n{block}"
+
+    return text.strip()
 
 
 # --------------------------------------------------
@@ -215,6 +275,10 @@ def generate_jd(form_data: Dict, profile: Dict = None) -> str:
 
     # Experience
     experience_phrase = _format_experience(data.get("experience", ""))
+    
+    # Department and profile context
+    department = data.get("department", "Not specified")
+    profile_source = "Profile Builder (Agent 2) + Form Data" if profile else "Google Form Data Only"
 
     # Profile JSON (from Agent 2)
     profile_json = json.dumps(profile, indent=2) if profile else "{}"
@@ -226,6 +290,8 @@ def generate_jd(form_data: Dict, profile: Dict = None) -> str:
         culture=culture,
         language_rules=language_rules,
         role=data["role"],
+        department=department,
+        profile_context=profile_source,
         location=data["location"],
         experience_phrase=experience_phrase,
         employment_type=data["employment_type"],
@@ -248,4 +314,12 @@ def generate_jd(form_data: Dict, profile: Dict = None) -> str:
         )
 
     content = normalize_bullets(content)
+    content = _ensure_jd_structure(
+        content=content,
+        role=data["role"],
+        location=data["location"],
+        experience_phrase=experience_phrase,
+        employment_type=data["employment_type"],
+        department=department,
+    )
     return content.strip()

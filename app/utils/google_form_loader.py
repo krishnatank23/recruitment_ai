@@ -1,3 +1,4 @@
+# google form loader 
 import json
 import pandas as pd
 import gspread
@@ -96,13 +97,3 @@ def fetch_google_form_data() -> list[dict]:
         })
 
     return result
-
-if __name__ == "__main__":
-    data = fetch_google_form_data()
-
-    print("\n========== GOOGLE FORM OUTPUT ==========\n")
-    for idx, row in enumerate(data, start=1):
-        print(f"--- ENTRY {idx} ---")
-        for key, value in row.items():
-            print(f"{key}: {value}")
-        print()

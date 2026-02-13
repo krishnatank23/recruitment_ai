@@ -1,207 +1,151 @@
 # app/agents/jd_clarifier.py
 # Agent 1: Clarifying Questions Generator
-# Generates MCQs from the "Head of Department" perspective
-# No draft JD required — works solely from role + department data
+# Generates adaptive MCQs from full Google Form ground truth
 
 from app.utils.llm import get_llm
 import json
 import re
 
-# ============================================================
-# CLARIFIER PROMPT — HEAD OF DEPARTMENT PERSPECTIVE
-# ============================================================
-
 CLARIFY_PROMPT = """You are a senior recruitment strategist.
 
 SCENARIO:
-The **Head of {department}** has requested to hire a **{title}**.
-The Head may not be fully aware of every detail this role needs.
-Your job is to generate clarifying questions FROM the Head's perspective —
-questions that help the Head think more deeply about what they truly need.
+The Head of {department} has requested to hire a {title}.
+Your job is to ask clarifying questions that uncover the real hiring intent.
 
-CONTEXT FROM GOOGLE FORM:
-- Job Title: {title}
-- Department: {department}
-- Location: {location}
-- Experience Level: {experience_level}
-- Employment Type: {employment_type}
-- Work Mode: {work_mode}
-- Must-Have Skills: {key_skills}
-- Key Responsibilities: {key_responsibilities}
-- Reporting To: {reporting_to}
-- Additional Info: {additional_info}
+GROUND TRUTH (GOOGLE FORM DATA):
+{form_data_json}
 
 TASK:
 Generate exactly 5 multiple-choice questions that:
-1. Are phrased as if asking the Department Head directly
-   (e.g., "As the Head of {department}, what specific outcomes do you expect from this {title} in the first 90 days?")
-2. Help clarify responsibilities, success metrics, team dynamics, authority level, and ownership
-3. Each question MUST have exactly 4 options
-4. Options should be meaningful, specific to the {title} role, and allow MULTI-SELECT
-5. Focus on gaps in the form data — things the Head might not have thought about
+1. Are tailored to this exact role, department, and form context.
+2. Cover different themes (scope, outcomes, ownership, collaboration, priorities, capability depth).
+3. Are not repetitive in structure or meaning.
+4. Each question has exactly 4 options.
+5. Options are specific to this role and support multi-select.
 
-OUTPUT FORMAT (STRICT JSON ONLY — EXACTLY 5 QUESTIONS):
-
+OUTPUT FORMAT (STRICT JSON ARRAY ONLY):
 [
   {{
     "id": "q1",
-    "question": "As the Head of {department}, ...",
-    "options": [
-      "Option A",
-      "Option B",
-      "Option C",
-      "Option D"
-    ],
-    "target_section": "responsibilities|authority|ownership|success_metrics|team_dynamics"
+    "question": "...",
+    "options": ["Option A", "Option B", "Option C", "Option D"]
   }},
   {{
     "id": "q2",
     "question": "...",
-    "options": ["Option A", "Option B", "Option C", "Option D"],
-    "target_section": "responsibilities|authority|ownership|success_metrics|team_dynamics"
+    "options": ["Option A", "Option B", "Option C", "Option D"]
   }},
   {{
     "id": "q3",
     "question": "...",
-    "options": ["Option A", "Option B", "Option C", "Option D"],
-    "target_section": "responsibilities|authority|ownership|success_metrics|team_dynamics"
+    "options": ["Option A", "Option B", "Option C", "Option D"]
   }},
   {{
     "id": "q4",
     "question": "...",
-    "options": ["Option A", "Option B", "Option C", "Option D"],
-    "target_section": "responsibilities|authority|ownership|success_metrics|team_dynamics"
+    "options": ["Option A", "Option B", "Option C", "Option D"]
   }},
   {{
     "id": "q5",
     "question": "...",
-    "options": ["Option A", "Option B", "Option C", "Option D"],
-    "target_section": "responsibilities|authority|ownership|success_metrics|team_dynamics"
+    "options": ["Option A", "Option B", "Option C", "Option D"]
   }}
 ]
 
 RULES:
-- Output ONLY valid JSON array with exactly 5 questions
-- NEVER include "Not Applicable" as an option
-- Each question MUST have exactly 4 options
-- Questions must feel like they come from a Head-of-Department conversation
-- No explanations, no markdown, no extra text
-- Do NOT ask about salary, CTC, compensation, work mode, remote/hybrid, travel, shift timing, or urgency
+- Use Google Form data as ground truth.
+- Do not ask role-generic questions if role-specific context exists.
+- Do not ask about salary, CTC, compensation, work mode, remote/hybrid, travel, shift timing, or urgency.
+- Output only a valid JSON array. No markdown. No explanation.
 """
-
-# ============================================================
-# POST-LLM VALIDATOR
-# ============================================================
 
 BANNED_KEYWORDS = [
     "salary", "ctc", "compensation",
-    "years of experience", "years experience",
     "work mode", "remote", "hybrid", "onsite",
     "travel", "shift", "timing", "working hours",
     "urgency", "how urgent"
 ]
 
 
-def post_validate_questions(questions: list) -> list:
-    """Filter out questions with banned keywords."""
-    valid = []
-    for q in questions:
-        text = q.get("question", "").lower()
-        if any(b.lower() in text for b in BANNED_KEYWORDS):
-            continue
-        if not isinstance(q.get("options"), list) or len(q.get("options", [])) != 4:
-            continue
-        valid.append(q)
-    return valid
-
-
-# ============================================================
-# JSON EXTRACTION (SAFE)
-# ============================================================
-
 def _extract_json(text: str) -> str:
     """Extract JSON array from LLM response."""
-    match = re.search(r"\[\s*{.*?}\s*\]", text, re.DOTALL)
-    if not match:
-        return "[]"
-    raw = match.group(0)
-    raw = re.sub(r',\s+', ', ', raw)
-    raw = re.sub(r':\s+', ': ', raw)
-    raw = re.sub(r'\[\s+', '[', raw)
-    raw = re.sub(r'\s+\]', ']', raw)
-    raw = re.sub(r'{\s+', '{ ', raw)
-    raw = re.sub(r'\s+}', ' }', raw)
-    return raw
+    if "```json" in text:
+        start = text.find("```json") + 7
+        end = text.find("```", start)
+        text = text[start:end].strip()
 
+    match = re.search(r"\[\s*\{.*\}\s*\]", text, re.DOTALL)
+    if match:
+        return match.group(0)
 
-# ============================================================
-# FINAL VALIDATION
-# ============================================================
+    return text.strip()
+
 
 def _is_valid_question(q: dict) -> bool:
     """Validate question structure."""
     if not isinstance(q, dict):
         return False
-    required = {"id", "question", "options", "target_section"}
+    required = {"id", "question", "options"}
     if not required.issubset(q.keys()):
         return False
     if not isinstance(q.get("options"), list) or len(q["options"]) != 4:
         return False
+    if not isinstance(q.get("question"), str) or not q["question"].strip():
+        return False
     return True
 
 
-# ============================================================
-# MAIN FUNCTION
-# ============================================================
+def post_validate_questions(questions: list) -> list:
+    """Filter banned and duplicate/near-duplicate questions."""
+    valid = []
+    seen = set()
+
+    for q in questions:
+        question_text = str(q.get("question", "")).strip()
+        question_lower = question_text.lower()
+
+        if any(b.lower() in question_lower for b in BANNED_KEYWORDS):
+            continue
+
+        options = q.get("options", [])
+        if not isinstance(options, list) or len(options) != 4:
+            continue
+
+        # Avoid duplicate/near-duplicate questions
+        norm = re.sub(r"[^a-z0-9]+", " ", question_lower).strip()
+        if norm in seen:
+            continue
+        seen.add(norm)
+
+        # Normalize id format
+        q["id"] = f"q{len(valid) + 1}"
+        q["question"] = question_text
+        q["options"] = [str(o).strip() for o in options]
+        valid.append(q)
+
+    return valid
+
 
 def generate_clarifying_questions(form_data: dict) -> list:
     """
-    Agent 1: Generate 5 clarifying questions from the Head-of-Department perspective.
-
-    This agent does NOT require a draft JD. It works solely from the
-    Google Form data (role, department, skills, responsibilities).
+    Generate 5 clarifying questions dynamically from Google Form data.
 
     Args:
-        form_data: dict from Google Form containing role, department, etc.
+        form_data: dict from Google Form containing role/department and all fields.
 
     Returns:
         List of 5 MCQ questions with 4 options each.
     """
     llm = get_llm()
 
-    # Extract fields from form data
     title = form_data.get("role", "Unknown Role")
     department = form_data.get("department", "General")
-    location = form_data.get("location", "")
-    experience = form_data.get("experience", "")
-    employment_type = form_data.get("employment_type", "Full-time")
-    work_mode = form_data.get("work_mode", "")
-    reporting_to = form_data.get("reporting_to", "")
-    must_have_skills = form_data.get("must_have_skills", "")
-    key_responsibilities = form_data.get("key_responsibilities", "")
-    other_skills = form_data.get("other_skills", "")
-
-    # Build additional info from remaining fields
-    additional_parts = []
-    if form_data.get("new_or_scaling"):
-        additional_parts.append(f"Role type: {form_data['new_or_scaling']}")
-    if form_data.get("minimum_education"):
-        additional_parts.append(f"Education: {form_data['minimum_education']}")
-    if other_skills:
-        additional_parts.append(f"Other skills: {other_skills}")
-    additional_info = "; ".join(additional_parts) if additional_parts else "None provided"
+    form_data_json = json.dumps(form_data, indent=2)
 
     prompt = CLARIFY_PROMPT.format(
         title=title,
         department=department,
-        location=location,
-        experience_level=experience,
-        employment_type=employment_type,
-        work_mode=work_mode,
-        key_skills=must_have_skills,
-        key_responsibilities=key_responsibilities,
-        reporting_to=reporting_to,
-        additional_info=additional_info,
+        form_data_json=form_data_json,
     )
 
     try:
@@ -211,62 +155,37 @@ def generate_clarifying_questions(form_data: dict) -> list:
         print(f"[JD_CLARIFIER] Error calling LLM: {e}")
         return []
 
-    json_text = _extract_json(raw_text)
-
     try:
+        json_text = _extract_json(raw_text)
         questions = json.loads(json_text)
-    except json.JSONDecodeError as e:
-        print(f"[JD_CLARIFIER] JSON parse error: {e}, raw={json_text[:300]}")
-        return []
     except Exception as e:
-        print(f"[JD_CLARIFIER] Unexpected error: {e}")
+        print(f"[JD_CLARIFIER] JSON parse error: {e}")
         return []
 
     if not isinstance(questions, list):
         return []
 
-    # Ensure exactly 5 valid questions
-    questions = [q for q in questions if _is_valid_question(q)][:5]
-
-    # Apply safety filter
+    questions = [q for q in questions if _is_valid_question(q)]
     questions = post_validate_questions(questions)
 
-    return questions
+    # Enforce exactly 5 questions for current UI flow
+    return questions[:5]
 
 
-# ============================================================
-# CLI TEST
-# ============================================================
 if __name__ == "__main__":
     from app.utils.google_form_loader import fetch_google_form_data
 
     rows = fetch_google_form_data()
     if not rows:
         print("No Google Form data found.")
-        exit(1)
+        raise SystemExit(1)
 
-    print("\nSelect a job role:\n")
-    for i, r in enumerate(rows, start=1):
-        print(f"{i}. {r.get('role', 'UNKNOWN')} ({r.get('department', '')})")
-
-    choice = input("\nEnter role number: ").strip()
-    try:
-        selected = rows[int(choice) - 1]
-    except Exception:
-        print("Invalid selection")
-        exit(1)
-
+    selected = rows[0]
     questions = generate_clarifying_questions(form_data=selected)
 
-    print(
-        f"\n========== CLARIFYING QUESTIONS FOR {selected.get('role', '').upper()} ==========\n"
-    )
-
-    if not questions:
-        print("No questions generated.")
-    else:
-        for q in questions:
-            print(f"{q['id']}: {q['question']}")
-            for i, opt in enumerate(q["options"], start=1):
-                print(f"  {i}. {opt}")
-            print(f"Target Section: {q['target_section']}\n")
+    print(f"\nGenerated {len(questions)} questions for {selected.get('role', '')} ({selected.get('department', '')})\n")
+    for q in questions:
+        print(f"{q['id']}: {q['question']}")
+        for i, opt in enumerate(q["options"], start=1):
+            print(f"  {i}. {opt}")
+        print("")

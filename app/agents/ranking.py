@@ -4,7 +4,11 @@ def ranking_agent(state):
         if c["decision"] == "ACCEPT"
     ]
 
-    accepted.sort(key=lambda x: x["final_score"], reverse=True)
+    # prefer composite_score (persona-aware) if available, else final_score
+    def sort_key(x):
+        return x.get("composite_score") if x.get("composite_score") is not None else x.get("final_score", 0)
+
+    accepted.sort(key=lambda x: sort_key(x), reverse=True)
 
     for i, c in enumerate(accepted, start=1):
         c["rank"] = i

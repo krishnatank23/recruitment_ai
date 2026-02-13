@@ -12,16 +12,17 @@ import streamlit as st
 st.set_page_config(
     page_title="WOGOM Hiring Platform",
     layout="wide",
-    page_icon="🏢",
+    page_icon="WOGOM",
     initial_sidebar_state="collapsed",
 )
 
 # ── Import portals ──────────────────────────────────────────
 try:
     import recruiter_portal
-    import candidate_portal
+    # import candidate_portal
+    import candidate_matching_portal
 except ModuleNotFoundError:
-    from ui import recruiter_portal, candidate_portal
+    from ui import recruiter_portal, candidate_matching_portal
 
 # ── Global Design System ────────────────────────────────────
 st.markdown("""
@@ -114,33 +115,89 @@ td, th, caption,
     text-decoration: none;
 }
 
-/* ── Hero ── */
+/* ── Hero (refined, minimal & professional) ── */
 .hero {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 88px 24px 72px;
+}
+.hero-card {
+    background: linear-gradient(180deg, rgba(255,255,255,0.9), rgba(250,250,252,0.95));
+    border-radius: 20px;
+    box-shadow: 0 12px 40px rgba(2,6,23,0.06);
+    padding: 56px 48px;
+    max-width: 1100px;
+    width: 100%;
     text-align: center;
-    padding: 80px 24px 60px;
-    max-width: 800px;
-    margin: 0 auto;
+    border: 1px solid rgba(15,23,42,0.04);
+}
+.hero .kicker {
+    display: inline-block;
+    font-size: 13px;
+    color: #7C82A1;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    background: rgba(99,102,241,0.06);
+    padding: 6px 10px;
+    border-radius: 999px;
+    margin-bottom: 18px;
 }
 .hero h1 {
-    font-size: 56px !important;
+    font-size: 48px !important;
     font-weight: 800 !important;
     color: #0F172A !important;
-    letter-spacing: -2px;
-    line-height: 1.1;
-    margin-bottom: 20px !important;
+    letter-spacing: -0.6px;
+    line-height: 1.05;
+    margin: 0.15rem 0 16px !important;
 }
 .hero h1 .accent {
-    background: linear-gradient(135deg, #6366F1, #A855F7);
+    background: linear-gradient(90deg, #6D28D9 0%, #8B5CF6 50%, #7C3AED 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }
-.hero p {
-    font-size: 20px;
-    color: #64748B !important;
-    line-height: 1.6;
-    max-width: 640px;
-    margin: 0 auto;
+.hero h1 .link-icon {
+    display: inline-block;
+    margin-left: 8px;
+    vertical-align: middle;
+    color: #94A3B8;
+    font-size: 18px;
 }
+.hero p {
+    font-size: 16px;
+    color: #475569 !important;
+    line-height: 1.7;
+    max-width: 820px;
+    margin: 0 auto 22px;
+}
+.hero-ctas {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-top: 18px;
+}
+.hero-cta-primary {
+    background: linear-gradient(90deg,#6D28D9,#8B5CF6) !important;
+    color: white !important;
+    border-radius: 12px !important;
+    padding: 12px 22px !important;
+    font-weight: 700 !important;
+    box-shadow: 0 8px 30px rgba(99,102,241,0.12) !important;
+}
+.hero-cta-ghost {
+    background: transparent !important;
+    color: #334155 !important;
+    border: 1px solid rgba(15,23,42,0.06) !important;
+    border-radius: 12px !important;
+    padding: 12px 22px !important;
+    font-weight: 600 !important;
+}
+@media (max-width: 640px) {
+    .hero-card { padding: 36px 20px; }
+    .hero h1 { font-size: 32px !important; }
+    .hero p { font-size: 14px; }
+}
+
 
 /* ── Feature cards ── */
 .features {
@@ -228,7 +285,7 @@ if st.session_state.page == "Home":
     # Nav bar
     st.markdown("""
     <div class="nav-bar">
-        <div class="nav-logo">🏢 WOGOM</div>
+        <div class="nav-logo">WOGOM</div>
         <div class="nav-links">
             <a href="#">Platform</a>
             <a href="#">About</a>
@@ -236,12 +293,18 @@ if st.session_state.page == "Home":
     </div>
     """, unsafe_allow_html=True)
 
-    # Hero
+    # Hero (refined)
     st.markdown("""
     <div class="hero">
+      <div class="hero-card">
+        <div class="kicker">Smart Hiring</div>
         <h1>Smart Hiring,<br/><span class="accent">Powered by AI</span></h1>
-        <p>Generate professional job descriptions, analyze candidates
-        semantically, and make data-driven hiring decisions — all in one platform.</p>
+        <p>Generate professional job descriptions, analyze candidates with persona-driven fit scoring, and make data-driven hiring decisions — all in one minimal, secure platform.</p>
+        <div class="hero-ctas">
+          <button class="hero-cta-primary" onclick="window.location.href='#'">Start JD creation</button>
+          <button class="hero-cta-ghost" onclick="window.location.href='#'">Explore candidates</button>
+        </div>
+      </div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -249,16 +312,16 @@ if st.session_state.page == "Home":
     st.markdown("""
     <div class="features">
         <div class="feature-card">
-            <div class="feature-icon">📋</div>
-            <h3>JD Generator</h3>
+            <div class="feature-icon"></div>
+            <h3>JD generator</h3>
             <p>Create hiring-ready job descriptions in minutes using
             AI-powered clarifying questions and profile building.</p>
         </div>
         <div class="feature-card">
-            <div class="feature-icon">🧠</div>
+            <div class="feature-icon"></div>
             <h3>Candidate Intelligence</h3>
-            <p>Analyze resumes semantically — not just keywords.
-            Get fit scores, strengths, and gap analysis.</p>
+            <p>Match resumes to AI-generated personas and get detailed
+            fit scores with strengths, gaps, and recommendations.</p>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -268,12 +331,12 @@ if st.session_state.page == "Home":
     with col2:
         c1, c2 = st.columns(2, gap="medium")
         with c1:
-            if st.button("📋  Start JD Creation", use_container_width=True, type="primary"):
+            if st.button("Start JD creation", use_container_width=True, type="primary"):
                 st.session_state.page = "Recruiter"
                 st.rerun()
         with c2:
-            if st.button("🧠  Explore Candidates", use_container_width=True, type="primary"):
-                st.session_state.page = "Candidate"
+            if st.button("Match Candidates", use_container_width=True, type="primary"):
+                st.session_state.page = "CandidateMatching"
                 st.rerun()
 
 # ═══════════════════════════════════════════════════════════
@@ -297,3 +360,16 @@ elif st.session_state.page == "Candidate":
         st.session_state.page = "Home"
         st.rerun()
     candidate_portal.render()
+
+# ═══════════════════════════════════════════════════════════
+# CANDIDATE MATCHING PAGE (NEW)
+# ═══════════════════════════════════════════════════════════
+elif st.session_state.page == "CandidateMatching":
+    if st.button("← Back to Home", type="secondary"):
+        st.session_state.page = "Home"
+        # Reset candidate matching state
+        for k in list(st.session_state.keys()):
+            if k != "page":
+                del st.session_state[k]
+        st.rerun()
+    candidate_matching_portal.main()

@@ -1,0 +1,20 @@
+Senior Backend Engineer
+
+About: We are building a scalable API platform for fintech products.
+
+Must-Have Skills:
+- Python
+- REST APIs
+- SQL
+- Distributed systems
+
+Preferred Skills:
+- Kubernetes
+- AWS
+
+Experience: 4+ years
+
+What You'll Do:
+- Design and implement backend services
+- Collaborate with product and QA
+- Ensure high reliability and observability

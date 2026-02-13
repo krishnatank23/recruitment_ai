@@ -1,0 +1,2 @@
+C:\Users\Krishna Tank\Downloads\vs_code\recruitment_ai\venv\Lib\site-packages\langchain_core\_api\deprecation.py:26: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
+  from pydantic.v1.fields import FieldInfo as FieldInfoV1

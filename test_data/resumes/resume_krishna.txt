@@ -1,0 +1,14 @@
+Krishna Tank
+
+Summary:
+Experienced backend engineer with 5 years building scalable APIs in fintech. Strong Python and SQL skills. Worked on distributed systems and cloud-native deployments.
+
+Skills:
+- Python
+- REST APIs
+- SQL
+- AWS
+
+Experience:
+- Backend Engineer at FinTechX (3 years)
+- Software Engineer at WebScale (2 years)
