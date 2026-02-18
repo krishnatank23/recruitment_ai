@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
     Upload, Rocket, Trophy, Search, Filter, Users,
     Brain, Target, ChevronRight, Star, AlertTriangle,
@@ -32,6 +33,7 @@ function scoreBarColor(score) {
 }
 
 export default function CandidatePage() {
+    const location = useLocation();
     const [step, setStep] = useState('profile');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
@@ -39,6 +41,34 @@ export default function CandidatePage() {
     // Profile state
     const [profileJson, setProfileJson] = useState('');
     const [profile, setProfile] = useState(null);
+
+    // Auto-fill from navigation state (e.g. from Candidate Tracking)
+    useEffect(() => {
+        const state = location.state;
+        if (state?.generatedProfile) {
+            // Use the AI-generated job profile
+            const profileData = typeof state.generatedProfile === 'string'
+                ? state.generatedProfile
+                : JSON.stringify(state.generatedProfile, null, 2);
+            setProfileJson(profileData);
+            try {
+                setProfile(typeof state.generatedProfile === 'string'
+                    ? JSON.parse(state.generatedProfile)
+                    : state.generatedProfile);
+            } catch {
+                setProfile(profileData);
+            }
+            setStep('personas');
+        } else if (state?.jdText) {
+            setProfileJson(state.jdText);
+            try {
+                setProfile(JSON.parse(state.jdText));
+            } catch {
+                setProfile(state.jdText);
+            }
+            setStep('personas');
+        }
+    }, []);
 
     // Personas state
     const [personas, setPersonas] = useState([]);

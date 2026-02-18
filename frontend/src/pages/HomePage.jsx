@@ -10,6 +10,7 @@ import {
     Plus,
     BarChart3,
 } from 'lucide-react';
+import { getUser } from '../services/api';
 import './HomePage.css';
 
 const STATS = [
@@ -76,6 +77,15 @@ const RECENT_ACTIVITY = [
 
 export default function HomePage() {
     const navigate = useNavigate();
+    const user = getUser();
+    const isHR = user?.role === 'hr';
+
+    // Filter quick actions based on role
+    const quickActions = QUICK_ACTIONS.filter(action => {
+        // Hide Analyze Candidates for team leads
+        if (action.route === '/candidate' && !isHR) return false;
+        return true;
+    });
 
     return (
         <div className="dashboard">
@@ -110,7 +120,7 @@ export default function HomePage() {
                 <div>
                     <h2 className="section-title">Quick Actions</h2>
                     <div className="flex flex-col gap-md mt-md">
-                        {QUICK_ACTIONS.map((action, i) => (
+                        {quickActions.map((action, i) => (
                             <div
                                 key={i}
                                 className="action-tile"

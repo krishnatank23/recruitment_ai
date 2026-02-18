@@ -1,20 +1,229 @@
 const API_BASE = '';
 
+// ── Auth Token Management ──
+
+function getToken() {
+    return localStorage.getItem('token');
+}
+
+export function setToken(token) {
+    localStorage.setItem('token', token);
+}
+
+export function clearToken() {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+}
+
+export function getUser() {
+    const u = localStorage.getItem('user');
+    return u ? JSON.parse(u) : null;
+}
+
+export function setUser(user) {
+    localStorage.setItem('user', JSON.stringify(user));
+}
+
+
+// ── Base Request Helper ──
+
 async function request(url, options = {}) {
-    const res = await fetch(`${API_BASE}${url}`, {
-        headers: {
-            'Content-Type': 'application/json',
-            ...options.headers,
-        },
-        ...options,
-    });
+    const token = getToken();
+    const headers = {
+        'Content-Type': 'application/json',
+        ...options.headers,
+    };
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    // Handle FormData (remove Content-Type to let browser set boundary)
+    if (options.body instanceof FormData) {
+        delete headers['Content-Type'];
+    }
+
+    const res = await fetch(`${API_BASE}${url}`, { ...options, headers });
 
     if (!res.ok) {
+        if (res.status === 401) {
+            clearToken();
+            window.location.href = '/login';
+            throw new Error('Session expired');
+        }
         const text = await res.text();
         throw new Error(`API Error ${res.status}: ${text}`);
     }
 
     return res.json();
+}
+
+async function authFetch(url, options = {}) {
+    const token = getToken();
+    const headers = { ...(options.headers || {}) };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`${API_BASE}${url}`, { ...options, headers });
+
+    if (!res.ok) {
+        if (res.status === 401) {
+            clearToken();
+            window.location.href = '/login';
+            throw new Error('Session expired');
+        }
+        const text = await res.text();
+        throw new Error(`API Error ${res.status}: ${text}`);
+    }
+    return res;
+}
+
+
+// ── Auth ──
+
+export async function login(email, password) {
+    const body = new URLSearchParams({ username: email, password });
+    const res = await fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+    });
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Login failed: ${text}`);
+    }
+    const data = await res.json();
+    setToken(data.access_token);
+    setUser(data.user);
+    return data;
+}
+
+export async function register(name, email, password, role) {
+    return request('/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({ name, email, password, role }),
+    });
+}
+
+export async function fetchMe() {
+    return request('/auth/me');
+}
+
+
+// ── Job Requests ──
+
+export async function createJob(payload) {
+    return request('/jobs/', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    });
+}
+
+export async function listJobs() {
+    return request('/jobs/');
+}
+
+export async function getJob(jobId) {
+    return request(`/jobs/${jobId}`);
+}
+
+export async function updateJob(jobId, payload) {
+    return request(`/jobs/${jobId}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+    });
+}
+
+export async function submitJob(jobId, payload = {}) {
+    return request(`/jobs/${jobId}/submit`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    });
+}
+
+export async function cancelJob(jobId) {
+    return request(`/jobs/${jobId}/cancel`, { method: 'POST' });
+}
+
+export async function uploadJD(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return request('jobs/parse-content', {
+        method: 'POST',
+        body: formData,
+    });
+}
+
+export async function incomingJobs() {
+    return request('/jobs/incoming/pending');
+}
+
+export async function activateJob(jobId) {
+    return request(`/jobs/${jobId}/activate`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+    });
+}
+
+export async function getAnalytics() {
+    return request('/analytics/pipeline');
+}
+
+export async function getAllCandidates() {
+    return request('/jobs/all-candidates');
+}
+
+export async function hrEditJob(jobId, payload) {
+    return request(`/jobs/${jobId}/hr-edit`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+    });
+}
+
+export async function fetchNotifications() {
+    return request('/notifications/');
+}
+
+export async function fetchUnreadCount() {
+    return request('/notifications/unread-count');
+}
+
+export async function markNotifRead(notifId) {
+    return request(`/notifications/${notifId}/read`, { method: 'POST' });
+}
+
+export async function markAllRead() {
+    return request('/notifications/read-all', { method: 'POST' });
+}
+
+
+// ── JD Pipeline ──
+
+export async function fetchSavedForms() {
+    return request('/jd/jd/forms');
+}
+
+export async function saveForm(formData) {
+    return request('/jd/jd/forms', {
+        method: 'POST',
+        body: JSON.stringify(formData),
+    });
+}
+
+export async function deleteForm(formId) {
+    return request(`/jd/jd/forms/${formId}`, { method: 'DELETE' });
+}
+
+export async function updateFormJd(formId, generatedJd) {
+    return request(`/jd/jd/forms/${formId}/jd`, {
+        method: 'PUT',
+        body: JSON.stringify({ generated_jd: generatedJd }),
+    });
+}
+
+export async function updateFormProfile(formId, generatedProfile) {
+    return request(`/jd/jd/forms/${formId}/profile`, {
+        method: 'PUT',
+        body: JSON.stringify({ generated_profile: generatedProfile }),
+    });
 }
 
 export async function fetchRoles() {
@@ -57,33 +266,22 @@ export async function refineJd(payload) {
 }
 
 export async function exportDocx(jdText, role) {
-    const res = await fetch(`${API_BASE}/jd/jd/export-docx`, {
+    const res = await authFetch('/jd/jd/export-docx', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jd: jdText, role }),
     });
-
-    if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`Export Error ${res.status}: ${text}`);
-    }
-
     return res.blob();
 }
 
 export async function runPipeline(formData) {
-    const res = await fetch(`${API_BASE}/pipeline/run_pipeline`, {
+    const res = await authFetch('/pipeline/run_pipeline', {
         method: 'POST',
-        body: formData, // FormData — no Content-Type header, browser sets boundary
+        body: formData,
     });
-
-    if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`Pipeline Error ${res.status}: ${text}`);
-    }
-
     return res.json();
 }
+
 
 // ── CV Analysis Pipeline ──
 
@@ -99,16 +297,10 @@ export async function evaluateCVs(resumeFile, personas) {
     formData.append('resumes', resumeFile);
     formData.append('personas', JSON.stringify(personas));
 
-    const res = await fetch(`${API_BASE}/cv/evaluate`, {
+    const res = await authFetch('/cv/evaluate', {
         method: 'POST',
         body: formData,
     });
-
-    if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`CV Evaluate Error ${res.status}: ${text}`);
-    }
-
     return res.json();
 }
 
@@ -125,16 +317,9 @@ export async function runFullCVPipeline(resumeFile, profile, topN = 10) {
     formData.append('profile', JSON.stringify(profile));
     formData.append('top_n', topN.toString());
 
-    const res = await fetch(`${API_BASE}/cv/full`, {
+    const res = await authFetch('/cv/full', {
         method: 'POST',
         body: formData,
     });
-
-    if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`CV Pipeline Error ${res.status}: ${text}`);
-    }
-
     return res.json();
 }
-

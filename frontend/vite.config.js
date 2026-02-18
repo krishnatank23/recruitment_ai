@@ -6,6 +6,18 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      '/auth': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/jobs': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/notifications': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
       '/jd': {
         target: 'http://localhost:8000',
         changeOrigin: true,
@@ -15,6 +27,10 @@ export default defineConfig({
         changeOrigin: true,
       },
       '/cv': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/analytics': {
         target: 'http://localhost:8000',
         changeOrigin: true,
       },

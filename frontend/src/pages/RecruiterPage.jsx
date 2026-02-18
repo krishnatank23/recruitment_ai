@@ -11,17 +11,49 @@ import {
     FileText,
     Briefcase,
     Edit3,
+    PlusCircle,
+    Search,
+    Trash2,
+    User,
+    GraduationCap,
+    Zap,
+    Globe,
+    Plane,
 } from 'lucide-react';
 import StepProgress from '../components/StepProgress';
 import JdPreview from '../components/JdPreview';
 import * as api from '../services/api';
 import './RecruiterPage.css';
 
+const EMPTY_FORM = {
+    role: '',
+    department: '',
+    location: '',
+    employment_type: 'Full-time',
+    travel_required: '',
+    work_mode: '',
+    key_responsibilities: '',
+    reporting_to: '',
+    new_or_scaling: '',
+    must_have_skills: '',
+    other_skills: '',
+    minimum_education: '',
+    experience: '',
+    urgency: '',
+    salary: '',
+};
+
 export default function RecruiterPage() {
     // ── wizard state ──
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+
+    // ── Step 1 tab: 'saved' | 'new' ──
+    const [inputMode, setInputMode] = useState('saved');
+    const [manualForm, setManualForm] = useState({ ...EMPTY_FORM });
+    const [savedForms, setSavedForms] = useState([]);
+    const [formSearch, setFormSearch] = useState('');
 
     // ── data across steps ──
     const [roles, setRoles] = useState([]);
@@ -56,7 +88,7 @@ export default function RecruiterPage() {
     };
 
     // ═══════════════════════════════════
-    // STEP 1 — Select Role
+    // STEP 1 — Select or Create Form
     // ═══════════════════════════════════
     const rolesLoadedRef = useRef(false);
 
@@ -64,26 +96,75 @@ export default function RecruiterPage() {
         if (rolesLoadedRef.current) return;
         rolesLoadedRef.current = true;
 
-        async function fetchRoles() {
+        async function loadSavedForms() {
             setLoading(true);
             setError('');
             try {
-                const data = await api.fetchRoles();
-                setRoles(data || []);
+                const data = await api.fetchSavedForms();
+                setSavedForms(data || []);
             } catch (err) {
                 console.error(err);
-                setError(err.message || 'Failed to load roles');
+                setError(err.message || 'Failed to load saved forms');
             }
             setLoading(false);
         }
 
-        fetchRoles();
+        loadSavedForms();
     }, []);
 
     const selectRole = (role) => {
+        if (selectedRole === role.role && jdData.id === role.id) {
+            setSelectedRole(null);
+            setJdData({});
+            return;
+        }
         setSelectedRole(role.role);
         setJdData(role);
     };
+
+    const updateManualField = (field, value) => {
+        setManualForm((prev) => ({ ...prev, [field]: value }));
+    };
+
+    const applyManualForm = async () => {
+        setSelectedRole(manualForm.role);
+        setJdData({ ...manualForm });
+        // Save to DB so it appears in "Saved Forms" next time
+        try {
+            const saved = await api.saveForm(manualForm);
+            setSavedForms((prev) => [saved, ...prev]);
+        } catch (err) {
+            console.error('Failed to save form:', err);
+        }
+    };
+
+    const deleteSavedForm = async (formId, e) => {
+        e.stopPropagation();
+        try {
+            await api.deleteForm(formId);
+            setSavedForms((prev) => prev.filter((f) => f.id !== formId));
+            if (jdData.id === formId) {
+                setSelectedRole(null);
+                setJdData({});
+            }
+        } catch (err) {
+            console.error('Failed to delete form:', err);
+        }
+    };
+
+    const isManualFormValid = () => {
+        return manualForm.role.trim() && manualForm.department.trim();
+    };
+
+    const filteredForms = savedForms.filter((f) => {
+        if (!formSearch.trim()) return true;
+        const q = formSearch.toLowerCase();
+        return (
+            (f.role || '').toLowerCase().includes(q) ||
+            (f.department || '').toLowerCase().includes(q) ||
+            (f.location || '').toLowerCase().includes(q)
+        );
+    });
 
     // ═══════════════════════════════════
     // STEP 2 — Clarify
@@ -132,6 +213,9 @@ export default function RecruiterPage() {
                 answers: formatted,
             });
             setProfile(res.profile);
+            if (jdData.id) {
+                api.updateFormProfile(jdData.id, res.profile).catch(() => { });
+            }
         } catch (err) {
             handleError(err);
         }
@@ -207,6 +291,9 @@ export default function RecruiterPage() {
             });
             setDraftJd(res.jd);
             setFinalJd(res.jd);
+            if (jdData.id) {
+                api.updateFormJd(jdData.id, res.jd).catch(() => { });
+            }
         } catch (err) {
             handleError(err);
         }
@@ -228,6 +315,9 @@ export default function RecruiterPage() {
                 session_id: sessionId,
             });
             setFinalJd(res.jd);
+            if (jdData.id) {
+                api.updateFormJd(jdData.id, res.jd).catch(() => { });
+            }
             setChatHistory((prev) => [
                 ...prev,
                 { instruction: chatInput.trim(), version: prev.length + 1 },
@@ -262,6 +352,9 @@ export default function RecruiterPage() {
 
     const startOver = () => {
         setStep(1);
+        setInputMode('saved');
+        setManualForm({ ...EMPTY_FORM });
+        setFormSearch('');
         setSelectedRole(null);
         setJdData({});
         setQuestions([]);
@@ -308,65 +401,434 @@ export default function RecruiterPage() {
             {/* ── STEP 1 ── */}
             {step === 1 && (
                 <div className="step-content animate-fade-in-up">
-                    <div className="card">
-                        <h3 className="section-heading">Select a Job Role</h3>
+                    {/* ── Tab switcher ── */}
+                    <div className="input-mode-tabs">
+                        <button
+                            className={`mode-tab ${inputMode === 'saved' ? 'active' : ''}`}
+                            onClick={() => {
+                                setInputMode('saved');
+                                setSelectedRole(null);
+                                setJdData({});
+                            }}
+                        >
+                            <Briefcase size={15} />
+                            <span>Saved Forms</span>
+                            {savedForms.length > 0 && (
+                                <span className="tab-badge">{savedForms.length}</span>
+                            )}
+                        </button>
+                        <button
+                            className={`mode-tab ${inputMode === 'new' ? 'active' : ''}`}
+                            onClick={() => {
+                                setInputMode('new');
+                                setSelectedRole(null);
+                                setJdData({});
+                            }}
+                        >
+                            <PlusCircle size={15} />
+                            <span>Create New</span>
+                        </button>
+                    </div>
 
-                        {loading ? (
-                            <div className="loading-overlay">
-                                <div className="spinner" />
-                                <span>Loading roles…</span>
-                            </div>
-                        ) : roles.length === 0 ? (
-                            <div className="alert alert-warning">
-                                No roles found. Make sure the backend is running.
-                            </div>
-                        ) : (
-                            <>
-                                <select
-                                    className="select"
-                                    value={selectedRole || ''}
-                                    onChange={(e) => {
-                                        const r = roles.find((r) => r.role === e.target.value);
-                                        if (r) selectRole(r);
-                                    }}
-                                    id="role-select"
-                                >
-                                    <option value="" disabled>
-                                        Choose a role…
-                                    </option>
-                                    {roles.map((r, i) => (
-                                        <option key={i} value={r.role}>
-                                            {r.role}
-                                        </option>
-                                    ))}
-                                </select>
+                    {/* ── Saved Forms Tab ── */}
+                    {inputMode === 'saved' && (
+                        <div className="saved-forms-section">
+                            {loading ? (
+                                <div className="loading-overlay">
+                                    <div className="spinner" />
+                                    <span>Loading saved forms…</span>
+                                </div>
+                            ) : savedForms.length === 0 ? (
+                                <div className="empty-state">
+                                    <div className="empty-state-icon">
+                                        <FileText size={40} />
+                                    </div>
+                                    <h4>No saved forms yet</h4>
+                                    <p>Create your first JD intake form to get started.</p>
+                                    <button
+                                        className="btn btn-primary"
+                                        onClick={() => setInputMode('new')}
+                                    >
+                                        <PlusCircle size={14} /> Create New Form
+                                    </button>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="search-bar">
+                                        <Search size={16} className="search-icon" />
+                                        <input
+                                            className="input search-input"
+                                            placeholder="Search by role, department, or location…"
+                                            value={formSearch}
+                                            onChange={(e) => setFormSearch(e.target.value)}
+                                        />
+                                    </div>
 
-                                {selectedRole && (
-                                    <div className="role-info mt-md">
-                                        <div className="role-chip">
-                                            <Building2 size={12} />
-                                            {jdData.department || '—'}
-                                        </div>
-                                        <div className="role-chip">
-                                            <MapPin size={12} />
-                                            {jdData.location || '—'}
-                                        </div>
-                                        <div className="role-chip">
-                                            <Clock size={12} />
-                                            {jdData.experience || '—'}
+                                    <div
+                                        className="saved-forms-grid"
+                                        onClick={(e) => {
+                                            if (e.target === e.currentTarget) {
+                                                setSelectedRole(null);
+                                                setJdData({});
+                                            }
+                                        }}
+                                    >
+                                        {filteredForms.map((form) => (
+                                            <div
+                                                key={form.id}
+                                                className={`saved-form-card ${selectedRole === form.role && jdData.id === form.id ? 'selected' : ''}`}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    selectRole(form);
+                                                }}
+                                            >
+                                                <div className="saved-form-header">
+                                                    <div className="saved-form-title">
+                                                        <Briefcase size={16} className="saved-form-icon" />
+                                                        <span>{form.role}</span>
+                                                    </div>
+                                                    <button
+                                                        className="btn-icon-sm delete-btn"
+                                                        onClick={(e) => deleteSavedForm(form.id, e)}
+                                                        title="Delete form"
+                                                    >
+                                                        <Trash2 size={13} />
+                                                    </button>
+                                                </div>
+                                                <div className="saved-form-tags">
+                                                    {form.department && (
+                                                        <span className="form-tag">
+                                                            <Building2 size={11} /> {form.department}
+                                                        </span>
+                                                    )}
+                                                    {form.location && (
+                                                        <span className="form-tag">
+                                                            <MapPin size={11} /> {form.location}
+                                                        </span>
+                                                    )}
+                                                    {form.employment_type && (
+                                                        <span className="form-tag">
+                                                            <Clock size={11} /> {form.employment_type}
+                                                        </span>
+                                                    )}
+                                                    {form.experience && (
+                                                        <span className="form-tag">
+                                                            <User size={11} /> {form.experience}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                {form.must_have_skills && (
+                                                    <p className="saved-form-skills">
+                                                        {form.must_have_skills}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {filteredForms.length === 0 && formSearch && (
+                                        <p className="text-muted text-sm text-center mt-md">
+                                            No forms match "{formSearch}"
+                                        </p>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    )}
+
+                    {/* ── New Form Tab ── */}
+                    {inputMode === 'new' && (
+                        <div className="manual-form animate-fade-in">
+                            {/* Section: Basic Info */}
+                            <div className="form-section">
+                                <div className="form-section-header">
+                                    <Briefcase size={16} />
+                                    <span>Basic Information</span>
+                                </div>
+                                <div className="form-grid">
+                                    <div className="form-group">
+                                        <label className="form-label">
+                                            Job Title <span className="required">*</span>
+                                        </label>
+                                        <input
+                                            className="input"
+                                            placeholder="e.g. AI Engineer, Sales Executive"
+                                            value={manualForm.role}
+                                            onChange={(e) => updateManualField('role', e.target.value)}
+                                            autoFocus
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">
+                                            Department <span className="required">*</span>
+                                        </label>
+                                        <input
+                                            className="input"
+                                            placeholder="e.g. Technology, Marketing"
+                                            value={manualForm.department}
+                                            onChange={(e) => updateManualField('department', e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">
+                                            <MapPin size={13} className="label-icon" /> Location
+                                        </label>
+                                        <input
+                                            className="input"
+                                            placeholder="e.g. Mumbai, Bangalore, Remote"
+                                            value={manualForm.location}
+                                            onChange={(e) => updateManualField('location', e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">
+                                            <User size={13} className="label-icon" /> Reporting To
+                                        </label>
+                                        <input
+                                            className="input"
+                                            placeholder="e.g. Tech Lead, VP Sales"
+                                            value={manualForm.reporting_to}
+                                            onChange={(e) => updateManualField('reporting_to', e.target.value)}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Section: Work Details */}
+                            <div className="form-section">
+                                <div className="form-section-header">
+                                    <Globe size={16} />
+                                    <span>Work Details</span>
+                                </div>
+                                <div className="form-grid">
+                                    <div className="form-group">
+                                        <label className="form-label">Employment Type</label>
+                                        <div className="radio-group">
+                                            {[
+                                                { label: 'Full-time', icon: <Briefcase size={14} /> },
+                                                { label: 'Contract', icon: <FileText size={14} /> },
+                                                { label: 'Internship', icon: <GraduationCap size={14} /> },
+                                                { label: 'Part-time', icon: <Clock size={14} /> }
+                                            ].map((opt) => (
+                                                <label
+                                                    key={opt.label}
+                                                    className={`radio-card ${manualForm.employment_type === opt.label ? 'selected' : ''}`}
+                                                >
+                                                    <input
+                                                        type="radio"
+                                                        name="employment_type"
+                                                        value={opt.label}
+                                                        checked={manualForm.employment_type === opt.label}
+                                                        onChange={(e) => updateManualField('employment_type', e.target.value)}
+                                                    />
+                                                    {opt.icon}
+                                                    <span>{opt.label}</span>
+                                                </label>
+                                            ))}
                                         </div>
                                     </div>
-                                )}
-                            </>
-                        )}
-                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Work Mode</label>
+                                        <div className="radio-group">
+                                            {[
+                                                { label: 'Remote', icon: <Globe size={14} /> },
+                                                { label: 'On-site', icon: <Building2 size={14} /> },
+                                                { label: 'Hybrid', icon: <MapPin size={14} /> }
+                                            ].map((opt) => (
+                                                <label
+                                                    key={opt.label}
+                                                    className={`radio-card ${manualForm.work_mode === opt.label ? 'selected' : ''}`}
+                                                >
+                                                    <input
+                                                        type="radio"
+                                                        name="work_mode"
+                                                        value={opt.label}
+                                                        checked={manualForm.work_mode === opt.label}
+                                                        onChange={(e) => updateManualField('work_mode', e.target.value)}
+                                                    />
+                                                    {opt.icon}
+                                                    <span>{opt.label}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">
+                                            <Plane size={13} className="label-icon" /> Travel Required?
+                                        </label>
+                                        <select
+                                            className="select"
+                                            value={manualForm.travel_required}
+                                            onChange={(e) => updateManualField('travel_required', e.target.value)}
+                                        >
+                                            <option value="">Select…</option>
+                                            <option value="No">No</option>
+                                            <option value="Occasionally">Occasionally</option>
+                                            <option value="Frequently">Frequently</option>
+                                        </select>
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">
+                                            <Zap size={13} className="label-icon" /> Urgency
+                                        </label>
+                                        <select
+                                            className="select"
+                                            value={manualForm.urgency}
+                                            onChange={(e) => updateManualField('urgency', e.target.value)}
+                                        >
+                                            <option value="">Select…</option>
+                                            <option value="Immediate">Immediate</option>
+                                            <option value="Within 30 Days">Within 30 Days</option>
+                                            <option value="Within 60 Days">Within 60 Days</option>
+                                            <option value="No Rush">No Rush</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Section: Requirements */}
+                            <div className="form-section">
+                                <div className="form-section-header">
+                                    <GraduationCap size={16} />
+                                    <span>Requirements</span>
+                                </div>
+                                <div className="form-grid">
+                                    <div className="form-group">
+                                        <label className="form-label">Experience Required</label>
+                                        <input
+                                            className="input"
+                                            placeholder="e.g. 2-4 years, Fresher"
+                                            value={manualForm.experience}
+                                            onChange={(e) => updateManualField('experience', e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Minimum Education</label>
+                                        <input
+                                            className="input"
+                                            placeholder="e.g. B.Tech, MBA, Any Graduate"
+                                            value={manualForm.minimum_education}
+                                            onChange={(e) => updateManualField('minimum_education', e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">
+                                            Salary Range
+                                        </label>
+                                        <input
+                                            className="input"
+                                            placeholder="e.g. 8-12 LPA (optional)"
+                                            value={manualForm.salary}
+                                            onChange={(e) => updateManualField('salary', e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">New Role or Scaling?</label>
+                                        <select
+                                            className="select"
+                                            value={manualForm.new_or_scaling}
+                                            onChange={(e) => updateManualField('new_or_scaling', e.target.value)}
+                                        >
+                                            <option value="">Select…</option>
+                                            <option value="Building something new">Building something new</option>
+                                            <option value="Scaling an existing function">Scaling an existing function</option>
+                                            <option value="Replacement">Replacement</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Section: Skills & Responsibilities */}
+                            <div className="form-section">
+                                <div className="form-section-header">
+                                    <Edit3 size={16} />
+                                    <span>Skills & Responsibilities</span>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Must-Have Skills (top 3)</label>
+                                    <input
+                                        className="input"
+                                        placeholder="e.g. Python, Communication, Data Analysis"
+                                        value={manualForm.must_have_skills}
+                                        onChange={(e) => updateManualField('must_have_skills', e.target.value)}
+                                    />
+                                </div>
+                                <div className="form-group mt-sm">
+                                    <label className="form-label">Other / Nice-to-Have Skills</label>
+                                    <input
+                                        className="input"
+                                        placeholder="e.g. Excel, SQL, Team Management"
+                                        value={manualForm.other_skills}
+                                        onChange={(e) => updateManualField('other_skills', e.target.value)}
+                                    />
+                                </div>
+                                <div className="form-group mt-sm">
+                                    <label className="form-label">Key Responsibilities</label>
+                                    <textarea
+                                        className="textarea"
+                                        rows={4}
+                                        placeholder="List 4-6 things this person will actually do (one per line)"
+                                        value={manualForm.key_responsibilities}
+                                        onChange={(e) => updateManualField('key_responsibilities', e.target.value)}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Summary Preview */}
+                            {isManualFormValid() && (
+                                <div className="form-preview">
+                                    <div className="form-preview-header">Summary</div>
+                                    <div className="role-info">
+                                        <div className="role-chip accent">
+                                            <Briefcase size={12} />
+                                            {manualForm.role}
+                                        </div>
+                                        <div className="role-chip">
+                                            <Building2 size={12} />
+                                            {manualForm.department}
+                                        </div>
+                                        {manualForm.location && (
+                                            <div className="role-chip">
+                                                <MapPin size={12} />
+                                                {manualForm.location}
+                                            </div>
+                                        )}
+                                        {manualForm.experience && (
+                                            <div className="role-chip">
+                                                <Clock size={12} />
+                                                {manualForm.experience}
+                                            </div>
+                                        )}
+                                        {manualForm.employment_type && (
+                                            <div className="role-chip">
+                                                {manualForm.employment_type}
+                                            </div>
+                                        )}
+                                        {manualForm.work_mode && (
+                                            <div className="role-chip">
+                                                <Globe size={12} />
+                                                {manualForm.work_mode}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     <div className="step-nav">
                         <div />
                         <button
                             className="btn btn-primary"
-                            disabled={!selectedRole}
-                            onClick={loadQuestions}
+                            disabled={
+                                inputMode === 'saved'
+                                    ? !selectedRole
+                                    : !isManualFormValid()
+                            }
+                            onClick={() => {
+                                if (inputMode === 'new') applyManualForm();
+                                loadQuestions();
+                            }}
                         >
                             Continue <ArrowRight size={14} />
                         </button>

@@ -6,26 +6,48 @@ import {
     ChevronLeft,
     ChevronRight,
     BriefcaseBusiness,
-    Settings,
-    HelpCircle,
+    ClipboardList,
+    Inbox,
+    UserCheck,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { getUser } from '../services/api';
 import './Sidebar.css';
-
-const NAV_ITEMS = [
-    { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-    { to: '/recruiter', label: 'JD Generator', icon: FileText },
-    { to: '/candidate', label: 'Candidates', icon: Users },
-];
-
-const BOTTOM_ITEMS = [
-    { to: '#', label: 'Settings', icon: Settings },
-    { to: '#', label: 'Help', icon: HelpCircle },
-];
 
 export default function Sidebar() {
     const location = useLocation();
     const [collapsed, setCollapsed] = useState(false);
+    const user = getUser();
+    const role = user?.role;
+
+    // Auto-collapse on small screens
+    useEffect(() => {
+        const handleResize = () => {
+            if (window.innerWidth < 1024) {
+                setCollapsed(true);
+            } else {
+                setCollapsed(false);
+            }
+        };
+
+        // Initial check
+        handleResize();
+
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
+    const NAV_ITEMS = role === 'hr'
+        ? [
+            { to: '/hr', label: 'HR Dashboard', icon: LayoutDashboard },
+            { to: '/tracking', label: 'Candidate Tracking', icon: UserCheck },
+            { to: '/recruiter', label: 'JD Generator', icon: FileText },
+            { to: '/candidate', label: 'Candidates', icon: Users },
+        ]
+        : [
+            { to: '/team-lead', label: 'My Requests', icon: ClipboardList },
+            { to: '/recruiter', label: 'JD Generator', icon: FileText },
+        ];
 
     return (
         <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
@@ -34,6 +56,13 @@ export default function Sidebar() {
                 <BriefcaseBusiness size={28} className="sidebar-logo-icon" />
                 {!collapsed && <span className="sidebar-logo-text">WOGOM</span>}
             </div>
+
+            {/* Role badge */}
+            {!collapsed && (
+                <div className="sidebar-role-badge">
+                    {role === 'hr' ? 'HR' : 'Team Lead'}
+                </div>
+            )}
 
             {/* Main Nav */}
             <nav className="sidebar-nav">
@@ -57,21 +86,6 @@ export default function Sidebar() {
 
             {/* Bottom items */}
             <div className="sidebar-bottom">
-                {BOTTOM_ITEMS.map((item) => {
-                    const Icon = item.icon;
-                    return (
-                        <Link
-                            key={item.label}
-                            to={item.to}
-                            className="sidebar-link"
-                            title={collapsed ? item.label : undefined}
-                        >
-                            <Icon size={20} />
-                            {!collapsed && <span>{item.label}</span>}
-                        </Link>
-                    );
-                })}
-
                 {/* Collapse toggle */}
                 <button
                     className="sidebar-toggle"

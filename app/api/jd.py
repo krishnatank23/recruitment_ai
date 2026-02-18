@@ -1,16 +1,15 @@
 # app/api/jd.py
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 from app.agents.jd_generator import generate_jd
 from app.agents.jd_clarifier import generate_clarifying_questions
 from app.agents.jd_chatbot import refine_jd
 from app.agents.profile_builder import build_profile
 from app.agents.role_suggester import suggest_roles
+from app.db.database import get_db
+from app.db.models import JDFormData
 import json
-import os
-import gspread
-import pandas as pd
-from google.oauth2.service_account import Credentials
 
 router = APIRouter(
     prefix="/jd",
@@ -18,80 +17,111 @@ router = APIRouter(
 )
 
 
+# ── Helper ─────────────────────────────────────────────
+
+def _form_row_to_dict(row: JDFormData) -> dict:
+    return {
+        "id": row.id,
+        "role": row.role,
+        "department": row.department,
+        "location": row.location or "",
+        "employment_type": row.employment_type or "Full-time",
+        "work_mode": row.work_mode or "",
+        "travel_required": row.travel_required or "",
+        "reporting_to": row.reporting_to or "",
+        "experience": row.experience or "",
+        "minimum_education": row.minimum_education or "",
+        "salary": row.salary or "",
+        "urgency": row.urgency or "",
+        "new_or_scaling": row.new_or_scaling or "",
+        "must_have_skills": row.must_have_skills or "",
+        "other_skills": row.other_skills or "",
+        "key_responsibilities": row.key_responsibilities or "",
+        "generated_jd": row.generated_jd or "",
+        "generated_profile": row.generated_profile or "",
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
+
+
+# ── Saved Forms (replaces Google Sheets) ───────────────
+
+@router.get("/forms")
+def list_saved_forms(db: Session = Depends(get_db)):
+    """List all previously saved JD intake forms from the database."""
+    rows = db.query(JDFormData).order_by(JDFormData.created_at.desc()).all()
+    return [_form_row_to_dict(r) for r in rows]
+
+
+@router.post("/forms")
+def save_form(payload: dict, db: Session = Depends(get_db)):
+    """Save a new JD intake form to the database."""
+    form = JDFormData(
+        role=payload.get("role", "").strip(),
+        department=payload.get("department", "").strip(),
+        location=payload.get("location", "").strip(),
+        employment_type=payload.get("employment_type", "Full-time").strip(),
+        work_mode=payload.get("work_mode", "").strip(),
+        travel_required=payload.get("travel_required", "").strip(),
+        reporting_to=payload.get("reporting_to", "").strip(),
+        experience=payload.get("experience", "").strip(),
+        minimum_education=payload.get("minimum_education", "").strip(),
+        salary=payload.get("salary", "").strip(),
+        urgency=payload.get("urgency", "").strip(),
+        new_or_scaling=payload.get("new_or_scaling", "").strip(),
+        must_have_skills=payload.get("must_have_skills", "").strip(),
+        other_skills=payload.get("other_skills", "").strip(),
+        key_responsibilities=payload.get("key_responsibilities", "").strip(),
+    )
+    db.add(form)
+    db.commit()
+    db.refresh(form)
+    return _form_row_to_dict(form)
+
+
+@router.put("/forms/{form_id}/jd")
+def update_form_jd(form_id: int, payload: dict, db: Session = Depends(get_db)):
+    """Update the generated JD text on a saved form."""
+    form = db.query(JDFormData).filter(JDFormData.id == form_id).first()
+    if not form:
+        return {"error": "Form not found"}
+    form.generated_jd = payload.get("generated_jd", "")
+    db.commit()
+    db.refresh(form)
+    return _form_row_to_dict(form)
+
+
+@router.put("/forms/{form_id}/profile")
+def update_form_profile(form_id: int, payload: dict, db: Session = Depends(get_db)):
+    """Save the AI-generated candidate profile on a saved form."""
+    form = db.query(JDFormData).filter(JDFormData.id == form_id).first()
+    if not form:
+        return {"error": "Form not found"}
+    import json
+    profile_data = payload.get("generated_profile")
+    form.generated_profile = json.dumps(profile_data) if isinstance(profile_data, dict) else (profile_data or "")
+    db.commit()
+    db.refresh(form)
+    return _form_row_to_dict(form)
+
+
+@router.delete("/forms/{form_id}")
+def delete_form(form_id: int, db: Session = Depends(get_db)):
+    """Delete a saved JD intake form."""
+    form = db.query(JDFormData).filter(JDFormData.id == form_id).first()
+    if not form:
+        return {"error": "Form not found"}
+    db.delete(form)
+    db.commit()
+    return {"ok": True}
+
+
+# ── Legacy /roles endpoint (now reads from DB) ────────
+
 @router.get("/roles")
-def get_roles():
-    """Fetch available job roles from Google Sheets."""
-    from pathlib import Path
-    import re
-
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets.readonly",
-        "https://www.googleapis.com/auth/drive.readonly",
-    ]
-
-    # 1) Try environment variable
-    service_account_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
-
-    # 2) Try reading from .streamlit secrets files
-    if not service_account_json:
-        project_root = Path(__file__).resolve().parents[2]
-        for secrets_name in [".secrets", "secrets.toml"]:
-            secrets_path = project_root / ".streamlit" / secrets_name
-            if secrets_path.exists():
-                raw = secrets_path.read_text(encoding="utf-8")
-                # Extract the JSON between triple quotes
-                match = re.search(r"GOOGLE_SERVICE_ACCOUNT_JSON\s*=\s*'''(.*?)'''", raw, re.DOTALL)
-                if not match:
-                    match = re.search(r'GOOGLE_SERVICE_ACCOUNT_JSON\s*=\s*"""(.*?)"""', raw, re.DOTALL)
-                if match:
-                    service_account_json = match.group(1).strip()
-                    break
-
-    if not service_account_json:
-        return []
-
-    try:
-        service_account_info = json.loads(service_account_json)
-        creds = Credentials.from_service_account_info(service_account_info, scopes=scopes)
-        client = gspread.authorize(creds)
-
-        SPREADSHEET_ID = "1SpNGsY707CaY6i06knI9F2HJdtAcHxGKq8IjAb17oWo"
-        sheet = client.open_by_key(SPREADSHEET_ID).sheet1
-        df = pd.DataFrame(sheet.get_all_records())
-        df.columns = [c.strip().lower() for c in df.columns]
-
-        result = []
-        for _, row in df.iterrows():
-            result.append({
-                "role": row.get("job title ( example: ai engineer, sales executive, hr manager)", ""),
-                "department": row.get("in which department (ex. marketing, tech etc.)", ""),
-                "location": row.get("location", ""),
-                "employment_type": row.get("employment type ( full-time / contract / internship )", "Full-time"),
-                "travel_required": row.get("does this role require travel?", ""),
-                "work_mode": row.get("work mode", ""),
-                "key_responsibilities": row.get("key responsibilities  ( list 4–6 things this person will actually do)", ""),
-                "reporting_to": row.get("reporting to (example: tech lead, sales manager)", ""),
-                "new_or_scaling": row.get("is this role building something new or scaling an existing function?", ""),
-                "must_have_skills": row.get("top 3 skills this role must have", ""),
-                "other_skills": row.get("other skills ( example: python, excel, communication )", ""),
-                "minimum_education": row.get("minimum education required", ""),
-                "experience": row.get("minimum experience required", ""),
-                "urgency": row.get("how urgent is this hire?", ""),
-                "salary": row.get("salary range (optional)", ""),
-            })
-        return result
-
-    except Exception as e:
-        print(f"[JD API] Google Sheets Error (using fallback): {e}")
-        # Fallback roles if API fails
-        return [
-            {"role": "Frontend Engineer", "department": "Technology", "location": "Remote", "employment_type": "Full-time"},
-            {"role": "Backend Engineer", "department": "Technology", "location": "Remote", "employment_type": "Full-time"},
-            {"role": "Product Manager", "department": "Product", "location": "Hybrid", "employment_type": "Full-time"},
-            {"role": "Sales Executive", "department": "Sales", "location": "On-site", "employment_type": "Full-time"},
-            {"role": "HR Manager", "department": "Human Resources", "location": "Hybrid", "employment_type": "Full-time"},
-            {"role": "Marketing Specialist", "department": "Marketing", "location": "Remote", "employment_type": "Full-time"},
-        ]
+def get_roles(db: Session = Depends(get_db)):
+    """Return saved forms as roles (backward compat)."""
+    rows = db.query(JDFormData).order_by(JDFormData.created_at.desc()).all()
+    return [_form_row_to_dict(r) for r in rows]
 
 @router.post("/clarify")
 def clarify_jd_api(payload: dict):
