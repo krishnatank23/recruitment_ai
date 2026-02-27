@@ -151,7 +151,7 @@ def generate_pdf(jd_text: str) -> BytesIO:
     return buffer
 
 # -------------------------------------------------
-# EXPORT FUNCTIONS (USED BY STREAMLIT)
+# EXPORT FUNCTIONS
 # -------------------------------------------------
 def export_to_docx(jd_text: str, filename: str) -> str:
     buffer = generate_docx(jd_text)

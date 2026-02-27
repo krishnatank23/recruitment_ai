@@ -32,6 +32,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
     role: UserRole
+    department: str = ""
 
 
 class TokenResponse(BaseModel):
@@ -45,6 +46,7 @@ class UserOut(BaseModel):
     name: str
     email: str
     role: UserRole
+    department: str = ""
 
 
 # ── Helpers ────────────────────────────────────────────
@@ -116,6 +118,7 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
         email=body.email,
         password_hash=_hash_password(body.password),
         role=body.role,
+        department=body.department or None,
     )
     db.add(user)
     db.commit()
@@ -135,7 +138,7 @@ def login(
     token = _create_token({"sub": str(user.id), "role": user.role.value})
     return TokenResponse(
         access_token=token,
-        user={"id": user.id, "name": user.name, "email": user.email, "role": user.role.value},
+        user={"id": user.id, "name": user.name, "email": user.email, "role": user.role.value, "department": user.department or ""},
     )
 
 

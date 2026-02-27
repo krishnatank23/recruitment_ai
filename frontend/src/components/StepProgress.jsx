@@ -2,12 +2,9 @@ import { Check } from 'lucide-react';
 import './StepProgress.css';
 
 const STEPS = [
-    { icon: '📋', label: 'Select Role' },
-    { icon: '🤔', label: 'Clarify' },
-    { icon: '🎯', label: 'Profile' },
-    { icon: '✏️', label: 'Choose Title' },
-    { icon: '📄', label: 'Draft JD' },
-    { icon: '💬', label: 'Refine' },
+    { icon: '📋', label: 'Job Details' },
+    { icon: '❓', label: 'Questions' },
+    { icon: '✏️', label: 'Draft JD' },
     { icon: '🏁', label: 'Export' },
 ];
 

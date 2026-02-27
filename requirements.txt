@@ -4,18 +4,15 @@ uvicorn
 python-multipart
 pydantic>=2.5,<3
 
-# UI
-streamlit
-requests
-pandas
-rich
-
 # LangChain + LangGraph ecosystem
 langchain
 langchain-core
 langchain-community
 langchain-groq
 langgraph
+
+# HTTP
+requests
 
 # Embeddings & vector search
 sentence-transformers
@@ -28,6 +25,15 @@ python-docx
 # Environment variables
 python-dotenv
 reportlab
-gspread
-google-auth
 Markdown
+
+# Database
+psycopg[binary]
+sqlalchemy
+
+# Auth
+passlib[bcrypt]
+python-jose[cryptography]
+
+# Scheduling
+apscheduler

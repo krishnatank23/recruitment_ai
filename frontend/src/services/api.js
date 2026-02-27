@@ -1,4 +1,4 @@
-const API_BASE = '';
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
 // ── Auth Token Management ──
 
@@ -96,10 +96,10 @@ export async function login(email, password) {
     return data;
 }
 
-export async function register(name, email, password, role) {
+export async function register(name, email, password, role, department = '') {
     return request('/auth/register', {
         method: 'POST',
-        body: JSON.stringify({ name, email, password, role }),
+        body: JSON.stringify({ name, email, password, role, department }),
     });
 }
 
@@ -265,6 +265,35 @@ export async function refineJd(payload) {
     });
 }
 
+// ── Chat-based JD Creation ──
+
+export async function chatCreateJd(prompt, userId = null, sessionId = null, department = '') {
+    return request('/jd/jd/chat-create', {
+        method: 'POST',
+        body: JSON.stringify({ prompt, user_id: userId, session_id: sessionId, department }),
+    });
+}
+
+export async function chatRefineJd(payload) {
+    return request('/jd/jd/chat-refine', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    });
+}
+
+// ── Memory System ──
+
+export async function getMemory(userId) {
+    return request(`/jd/jd/memory?user_id=${userId}`);
+}
+
+export async function analyzeMemory(payload) {
+    return request('/jd/jd/memory/analyze', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    });
+}
+
 export async function exportDocx(jdText, role) {
     const res = await authFetch('/jd/jd/export-docx', {
         method: 'POST',
@@ -320,6 +349,37 @@ export async function runFullCVPipeline(resumeFile, profile, topN = 10) {
     const res = await authFetch('/cv/full', {
         method: 'POST',
         body: formData,
+    });
+    return res.json();
+}
+
+
+// ── Keka Hire Integration ──
+
+export async function testKekaConnection() {
+    const res = await authFetch('/keka/test-connection');
+    return res.json();
+}
+
+export async function listKekaJobs(status = null) {
+    const url = status ? `/keka/jobs?status=${status}` : '/keka/jobs';
+    const res = await authFetch(url);
+    return res.json();
+}
+
+export async function listKekaCandidates(kekaJobId) {
+    const res = await authFetch(`/keka/jobs/${kekaJobId}/candidates`);
+    return res.json();
+}
+
+export async function importKekaCandidates(kekaJobId, localJobId, candidateIds = null) {
+    const res = await authFetch(`/keka/import-candidates/${kekaJobId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            local_job_id: localJobId,
+            candidate_ids: candidateIds,
+        }),
     });
     return res.json();
 }

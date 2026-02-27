@@ -13,10 +13,11 @@ import pypdf
 from app.db.database import get_db
 from app.db.models import (
     JobRequest, JobStatus, Notification, NotificationType, User, UserRole,
-    JDSource, Candidate,
+    Candidate,
 )
 from app.api.auth import get_current_user, require_role
 from app.utils.scheduler import schedule_pre_close_tasks
+from app.agents.profile_extractor import extract_profile_from_jd
 
 router = APIRouter(prefix="/jobs", tags=["Job Requests"])
 
@@ -25,6 +26,7 @@ router = APIRouter(prefix="/jobs", tags=["Job Requests"])
 
 class JobCreateRequest(BaseModel):
     role_title: str
+    department: Optional[str] = None
     jd_text: Optional[str] = None
     profile_json: Optional[str] = None
     budget: Optional[float] = None
@@ -43,6 +45,7 @@ class JobOut(BaseModel):
     creator_id: int
     creator_name: Optional[str] = None
     role_title: str
+    department: Optional[str] = None
     jd_text: Optional[str] = None
     profile_json: Optional[str] = None
     budget: Optional[float] = None
@@ -61,6 +64,7 @@ def _job_to_dict(job: JobRequest) -> dict:
         "creator_id": job.creator_id,
         "creator_name": job.creator.name if job.creator else None,
         "role_title": job.role_title,
+        "department": job.department,
         "jd_text": job.jd_text,
         "profile_json": job.profile_json,
         "budget": job.budget,
@@ -110,6 +114,7 @@ def create_job(
     job = JobRequest(
         creator_id=user.id,
         role_title=body.role_title,
+        department=body.department,
         jd_text=body.jd_text,
         profile_json=body.profile_json,
         budget=body.budget,
@@ -120,6 +125,25 @@ def create_job(
     db.add(job)
     db.commit()
     db.refresh(job)
+
+    # Auto-generate profile from JD text if no profile was provided
+    if not job.profile_json and job.jd_text:
+        import threading, json as _json
+        def _gen_profile(job_id, jd_text, dept):
+            try:
+                profile = extract_profile_from_jd(jd_text, department=dept)
+                from app.db.database import SessionLocal
+                db2 = SessionLocal()
+                j = db2.query(JobRequest).filter(JobRequest.id == job_id).first()
+                if j and not j.profile_json:
+                    j.profile_json = _json.dumps({"generated_profile": profile})
+                    db2.commit()
+                db2.close()
+                print(f"[AUTO_PROFILE] Generated profile for job {job_id}")
+            except Exception as e:
+                print(f"[AUTO_PROFILE] Error for job {job_id}: {e}")
+        threading.Thread(target=_gen_profile, args=(job.id, job.jd_text, job.department or ""), daemon=True).start()
+
     return _job_to_dict(job)
 
 
@@ -159,7 +183,7 @@ def get_all_candidates(
     for job in jobs:
         cands = db.query(Candidate).filter(Candidate.job_id == job.id).all()
 
-        # Extract generated_profile from profile_json metadata
+        # Extract generated_profile from profile_json metadata, fall back to jd_text
         generated_profile = None
         if job.profile_json:
             try:
@@ -171,6 +195,9 @@ def get_all_candidates(
                     generated_profile = meta
             except (json.JSONDecodeError, TypeError):
                 generated_profile = job.profile_json
+        elif job.jd_text:
+            # New flow: no profile_json, use JD text directly as the profile
+            generated_profile = job.jd_text
 
         result.append({
             "job_id": job.id,

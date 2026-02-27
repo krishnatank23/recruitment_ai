@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
     Plus, Send, XCircle, Eye, Clock, CheckCircle2,
     Calendar, Briefcase, FileText, RefreshCw,
     AlertTriangle, ArrowRight, ChevronDown, ChevronUp, Upload, Edit, Pencil,
-    Search, MapPin, Building2, Layers
+    Sparkles
 } from 'lucide-react';
 import * as api from '../services/api';
 import './TeamLeadPage.css';
@@ -17,6 +18,7 @@ const STATUS_CONFIG = {
 };
 
 export default function TeamLeadPage() {
+    const navigate = useNavigate();
     const [jobs, setJobs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
@@ -27,35 +29,26 @@ export default function TeamLeadPage() {
 
     // ── Form state ──
     const [roleTitle, setRoleTitle] = useState('');
+    const user = api.getUser();
     const [jdText, setJdText] = useState('');
-    const [budget, setBudget] = useState('');
-    const [adjustableBudget, setAdjustableBudget] = useState('');
-    const [endDate, setEndDate] = useState('');
-
-    // ── Dual-mode state ──
-    const [createMode, setCreateMode] = useState('saved'); // 'saved' | 'manual'
-    const [savedForms, setSavedForms] = useState([]);
-    const [formSearch, setFormSearch] = useState('');
-    const [selectedFormId, setSelectedFormId] = useState(null);
-    const [selectedFormProfile, setSelectedFormProfile] = useState(null);
-    const [formsLoading, setFormsLoading] = useState(false);
+    const [closureDate, setClosureDate] = useState('');
 
     useEffect(() => { loadJobs(); }, []);
 
+    // Check for incoming JD from JD Creator
     useEffect(() => {
-        if (showForm && !editingJobId) {
-            loadSavedForms();
+        const data = sessionStorage.getItem('jd_for_request');
+        if (data) {
+            try {
+                const { role, department: dept, jd, closure_date } = JSON.parse(data);
+                setRoleTitle(role || '');
+                setJdText(jd || '');
+                if (closure_date) setClosureDate(closure_date);
+                setShowForm(true);
+                sessionStorage.removeItem('jd_for_request');
+            } catch (_) { }
         }
-    }, [showForm]);
-
-    async function loadSavedForms() {
-        setFormsLoading(true);
-        try {
-            const data = await api.fetchSavedForms();
-            setSavedForms(data);
-        } catch (_) { /* silent */ }
-        finally { setFormsLoading(false); }
-    }
+    }, []);
 
     async function loadJobs() {
         setLoading(true);
@@ -73,21 +66,14 @@ export default function TeamLeadPage() {
         e.preventDefault();
         setActionLoading('create');
         try {
-            // Build profile_json — wrap the generated_profile if coming from a saved form
-            let profileJsonStr = null;
-            if (createMode === 'saved' && selectedFormProfile) {
-                const profileData = typeof selectedFormProfile === 'string'
-                    ? selectedFormProfile
-                    : JSON.stringify(selectedFormProfile);
-                profileJsonStr = JSON.stringify({ generated_profile: JSON.parse(profileData) });
-            }
             await api.createJob({
                 role_title: roleTitle,
+                department: user?.department || null,
                 jd_text: jdText || null,
-                profile_json: profileJsonStr,
-                budget: budget ? parseFloat(budget) : null,
-                adjustable_budget: adjustableBudget ? parseFloat(adjustableBudget) : null,
-                end_date: endDate || null,
+                profile_json: null,
+                budget: null,
+                adjustable_budget: null,
+                end_date: closureDate || null,
             });
             resetForm();
             setShowForm(false);
@@ -105,10 +91,11 @@ export default function TeamLeadPage() {
         try {
             await api.updateJob(editingJobId, {
                 role_title: roleTitle,
+                department: user?.department || null,
                 jd_text: jdText || null,
-                budget: budget ? parseFloat(budget) : null,
-                adjustable_budget: adjustableBudget ? parseFloat(adjustableBudget) : null,
-                end_date: endDate || null,
+                budget: null,
+                adjustable_budget: null,
+                end_date: closureDate || null,
             });
             resetForm();
             setShowForm(false);
@@ -162,40 +149,16 @@ export default function TeamLeadPage() {
     }
 
     function resetForm() {
-        setRoleTitle(''); setJdText(''); setBudget(''); setAdjustableBudget(''); setEndDate('');
+        setRoleTitle(''); setJdText(''); setClosureDate('');
         setEditingJobId(null);
-        setSelectedFormId(null);
-        setSelectedFormProfile(null);
-        setCreateMode('saved');
-        setFormSearch('');
         setError('');
-    }
-
-    function selectSavedForm(form) {
-        if (selectedFormId === form.id) {
-            // deselect
-            setSelectedFormId(null);
-            setSelectedFormProfile(null);
-            setRoleTitle('');
-            setJdText('');
-            setBudget('');
-            setAdjustableBudget('');
-            setEndDate('');
-            return;
-        }
-        setSelectedFormId(form.id);
-        setSelectedFormProfile(form.generated_profile || null);
-        setRoleTitle(form.role || '');
-        setJdText(form.generated_jd || '');
     }
 
     function startEdit(job) {
         setEditingJobId(job.id);
         setRoleTitle(job.role_title);
         setJdText(job.jd_text || '');
-        setBudget(job.budget || '');
-        setAdjustableBudget(job.adjustable_budget || '');
-        setEndDate(job.end_date ? job.end_date.split('T')[0] : '');
+        setClosureDate(job.end_date ? job.end_date.split('T')[0] : '');
         setShowForm(true);
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -254,171 +217,39 @@ export default function TeamLeadPage() {
                         {editingJobId ? 'Edit Job Request' : 'New Job Request'}
                     </h3>
 
-                    {/* Mode tabs — only show for new, not edit */}
-                    {!editingJobId && (
-                        <div className="tl-mode-tabs">
-                            <button
-                                type="button"
-                                className={`tl-mode-tab ${createMode === 'saved' ? 'active' : ''}`}
-                                onClick={() => {
-                                    setCreateMode('saved');
-                                    setSelectedFormId(null);
-                                    setSelectedFormProfile(null);
-                                    setRoleTitle('');
-                                    setJdText('');
-                                    setBudget('');
-                                    setAdjustableBudget('');
-                                    setEndDate('');
-                                }}
-                            >
-                                <Layers size={15} /> Use Saved Form
-                            </button>
-                            <button
-                                type="button"
-                                className={`tl-mode-tab ${createMode === 'manual' ? 'active' : ''}`}
-                                onClick={() => {
-                                    setCreateMode('manual');
-                                    setSelectedFormId(null);
-                                    setSelectedFormProfile(null);
-                                    setRoleTitle('');
-                                    setJdText('');
-                                    setBudget('');
-                                    setAdjustableBudget('');
-                                    setEndDate('');
-                                }}
-                            >
-                                <Edit size={15} /> Fill Manually
-                            </button>
+                    <div className="tl-form-grid">
+                        <div className="tl-form-group">
+                            <label><Briefcase size={14} /> Role Title *</label>
+                            <input
+                                value={roleTitle} onChange={e => setRoleTitle(e.target.value)}
+                                placeholder="e.g. Senior Software Engineer" required
+                            />
                         </div>
-                    )}
-
-                    {/* ── SAVED FORM MODE ── */}
-                    {!editingJobId && createMode === 'saved' && (
-                        <div className="tl-saved-section">
-                            <div className="tl-search-bar">
-                                <Search size={15} />
-                                <input
-                                    value={formSearch}
-                                    onChange={e => setFormSearch(e.target.value)}
-                                    placeholder="Search saved forms…"
-                                />
-                            </div>
-
-                            {formsLoading ? (
-                                <div className="tl-forms-loading">Loading saved forms…</div>
-                            ) : (() => {
-                                const filtered = savedForms.filter(f =>
-                                    (f.role || '').toLowerCase().includes(formSearch.toLowerCase()) ||
-                                    (f.department || '').toLowerCase().includes(formSearch.toLowerCase())
-                                );
-                                if (filtered.length === 0) {
-                                    return (
-                                        <div className="tl-forms-empty">
-                                            <FileText size={32} />
-                                            <p>{savedForms.length === 0 ? 'No saved forms yet. Ask your recruiter to create JD forms.' : 'No forms match your search.'}</p>
-                                        </div>
-                                    );
-                                }
-                                return (
-                                    <div
-                                        className="tl-forms-grid"
-                                        onClick={(e) => {
-                                            if (e.target === e.currentTarget) {
-                                                setSelectedFormId(null);
-                                                setSelectedFormProfile(null);
-                                                setRoleTitle('');
-                                                setJdText('');
-                                                setBudget('');
-                                                setAdjustableBudget('');
-                                                setEndDate('');
-                                            }
+                        <div className="tl-form-group">
+                            <label><Calendar size={14} /> Closure Date</label>
+                            <input
+                                type="date" value={closureDate}
+                                onChange={e => setClosureDate(e.target.value)}
+                            />
+                        </div>
+                        <div className="tl-form-group full-width">
+                            <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span><FileText size={14} /> Job Description</span>
+                                <div style={{ display: 'flex', gap: '6px' }}>
+                                    <button
+                                        type="button"
+                                        className="tl-btn ghost small"
+                                        style={{ fontSize: '0.75rem', padding: '4px 8px' }}
+                                        onClick={() => {
+                                            sessionStorage.setItem('jd_from_job_request', JSON.stringify({
+                                                role: roleTitle,
+                                                closureDate: closureDate
+                                            }));
+                                            navigate('/recruiter');
                                         }}
                                     >
-                                        {filtered.map(form => (
-                                            <div
-                                                key={form.id}
-                                                className={`tl-form-card ${selectedFormId === form.id ? 'selected' : ''} ${!form.generated_jd ? 'no-jd' : ''}`}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    selectSavedForm(form);
-                                                }}
-                                            >
-                                                <div className="tl-form-card-header">
-                                                    <Briefcase size={14} />
-                                                    <span className="tl-form-card-role">{form.role || 'Untitled Role'}</span>
-                                                </div>
-                                                <div className="tl-form-card-details">
-                                                    {form.department && (
-                                                        <span><Building2 size={12} /> {form.department}</span>
-                                                    )}
-                                                    {form.location && (
-                                                        <span><MapPin size={12} /> {form.location}</span>
-                                                    )}
-                                                    {form.experience && (
-                                                        <span><Clock size={12} /> {form.experience}</span>
-                                                    )}
-                                                </div>
-                                                {form.generated_jd ? (
-                                                    <div className="tl-form-card-jd-badge has-jd">
-                                                        <CheckCircle2 size={12} /> JD Generated
-                                                    </div>
-                                                ) : (
-                                                    <div className="tl-form-card-jd-badge no-jd-badge">
-                                                        <AlertTriangle size={12} /> No JD Yet
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                );
-                            })()}
-
-                            {/* Show selected form JD preview */}
-                            {selectedFormId && jdText && (
-                                <div className="tl-selected-preview">
-                                    <label><FileText size={14} /> Generated JD Preview</label>
-                                    <pre className="tl-jd-preview">{jdText}</pre>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {/* ── MANUAL MODE / EDIT MODE — standard fields ── */}
-                    {(editingJobId || createMode === 'manual') && (
-                        <div className="tl-form-grid">
-                            <div className="tl-form-group">
-                                <label><Briefcase size={14} /> Role Title *</label>
-                                <input
-                                    value={roleTitle} onChange={e => setRoleTitle(e.target.value)}
-                                    placeholder="e.g. Senior Software Engineer" required
-                                />
-                            </div>
-                            <div className="tl-form-group">
-                                <label>Budget (LPA)</label>
-                                <input
-                                    type="number" step="0.1" value={budget}
-                                    onChange={e => setBudget(e.target.value)}
-                                    placeholder="e.g. 15"
-                                />
-                            </div>
-                            <div className="tl-form-group">
-                                <label>Adjustable Budget (LPA)</label>
-                                <input
-                                    type="number" step="0.1" value={adjustableBudget}
-                                    onChange={e => setAdjustableBudget(e.target.value)}
-                                    placeholder="e.g. 2"
-                                />
-                            </div>
-                            <div className="tl-form-group">
-                                <label><Calendar size={14} /> End Date</label>
-                                <input
-                                    type="date" value={endDate}
-                                    onChange={e => setEndDate(e.target.value)}
-                                />
-                            </div>
-                            <div className="tl-form-group full-width">
-                                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span><FileText size={14} /> Job Description</span>
+                                        <Sparkles size={12} /> Create with AI
+                                    </button>
                                     <div style={{ position: 'relative', overflow: 'hidden' }}>
                                         <button type="button" className="tl-btn ghost small" style={{ fontSize: '0.75rem', padding: '4px 8px' }}>
                                             <Upload size={12} /> {actionLoading === 'upload' ? 'Uploading...' : 'Upload DOCX/PDF'}
@@ -431,43 +262,14 @@ export default function TeamLeadPage() {
                                             disabled={actionLoading === 'upload'}
                                         />
                                     </div>
-                                </label>
-                                <textarea
-                                    value={jdText} onChange={e => setJdText(e.target.value)}
-                                    rows={5} placeholder="Paste or type the job description here…"
-                                />
-                            </div>
+                                </div>
+                            </label>
+                            <textarea
+                                value={jdText} onChange={e => setJdText(e.target.value)}
+                                rows={5} placeholder="Paste or type the job description, or click 'Create with AI' above…"
+                            />
                         </div>
-                    )}
-
-                    {/* ── SAVED MODE — extra fields (budget, date) ── */}
-                    {!editingJobId && createMode === 'saved' && (
-                        <div className="tl-form-grid" style={{ marginTop: 16 }}>
-                            <div className="tl-form-group">
-                                <label>Budget (LPA)</label>
-                                <input
-                                    type="number" step="0.1" value={budget}
-                                    onChange={e => setBudget(e.target.value)}
-                                    placeholder="e.g. 15"
-                                />
-                            </div>
-                            <div className="tl-form-group">
-                                <label>Adjustable Budget (LPA)</label>
-                                <input
-                                    type="number" step="0.1" value={adjustableBudget}
-                                    onChange={e => setAdjustableBudget(e.target.value)}
-                                    placeholder="e.g. 2"
-                                />
-                            </div>
-                            <div className="tl-form-group">
-                                <label><Calendar size={14} /> End Date</label>
-                                <input
-                                    type="date" value={endDate}
-                                    onChange={e => setEndDate(e.target.value)}
-                                />
-                            </div>
-                        </div>
-                    )}
+                    </div>
 
                     <div className="tl-form-actions">
                         <button type="button" className="tl-btn ghost" onClick={() => { setShowForm(false); resetForm(); }}>
@@ -477,8 +279,7 @@ export default function TeamLeadPage() {
                             type="submit"
                             className="tl-btn primary"
                             disabled={
-                                actionLoading === 'create' || actionLoading === 'update' ||
-                                (!editingJobId && createMode === 'saved' && !selectedFormId)
+                                actionLoading === 'create' || actionLoading === 'update'
                             }
                         >
                             {editingJobId

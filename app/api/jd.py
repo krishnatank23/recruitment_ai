@@ -1,14 +1,17 @@
 # app/api/jd.py
 
-from fastapi import APIRouter, Depends
+from datetime import datetime, timezone
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 from app.agents.jd_generator import generate_jd
 from app.agents.jd_clarifier import generate_clarifying_questions
 from app.agents.jd_chatbot import refine_jd
+from app.agents.jd_chat_creator import create_jd_from_prompt, refine_jd_chat
+from app.agents.jd_memory import analyze_session
 from app.agents.profile_builder import build_profile
 from app.agents.role_suggester import suggest_roles
 from app.db.database import get_db
-from app.db.models import JDFormData
+from app.db.models import JDFormData, JDMemory
 import json
 
 router = APIRouter(
@@ -173,6 +176,147 @@ def refine_jd_api(payload: dict):
         session_id=payload.get("session_id", "")
     )
     return {"jd": updated_jd}
+
+
+# ── Chat-based JD Creation ─────────────────────────────
+
+@router.post("/chat-create")
+def chat_create_jd(payload: dict, db: Session = Depends(get_db)):
+    """Generate JD from a natural language chat prompt."""
+    prompt = payload.get("prompt", "").strip()
+    user_id = payload.get("user_id")
+    department = payload.get("department", "").strip()
+
+    if not prompt:
+        return {"error": "Prompt is required"}
+
+    # Load user memory if available
+    memory_context = ""
+    if user_id:
+        memory = db.query(JDMemory).filter(JDMemory.user_id == user_id).first()
+        if memory and memory.preferences_summary:
+            memory_context = memory.preferences_summary
+
+    session_id = payload.get("session_id", str(int(datetime.now(timezone.utc).timestamp() * 1000)))
+
+    result = create_jd_from_prompt(
+        user_prompt=prompt,
+        memory_context=memory_context,
+        session_id=session_id,
+        department=department,
+    )
+
+    return {
+        "jd": result.get("jd", ""),
+        "role": result.get("role", ""),
+        "department": result.get("department", ""),
+        "location": result.get("location", ""),
+        "experience": result.get("experience", ""),
+        "employment_type": result.get("employment_type", ""),
+        "session_id": session_id,
+        "has_memory": bool(memory_context),
+    }
+
+
+@router.post("/chat-refine")
+def chat_refine_jd(payload: dict, db: Session = Depends(get_db)):
+    """Refine an existing draft via chat with memory context."""
+    jd = payload.get("jd", "")
+    instruction = payload.get("instruction", "").strip()
+    user_id = payload.get("user_id")
+    role = payload.get("role", "")
+    session_id = payload.get("session_id", "")
+
+    if not jd or not instruction:
+        return {"error": "JD and instruction are required"}
+
+    # Load user memory
+    memory_context = ""
+    if user_id:
+        memory = db.query(JDMemory).filter(JDMemory.user_id == user_id).first()
+        if memory and memory.preferences_summary:
+            memory_context = memory.preferences_summary
+
+    updated_jd = refine_jd_chat(
+        current_jd=jd,
+        instruction=instruction,
+        memory_context=memory_context,
+        role=role,
+        session_id=session_id,
+    )
+
+    return {"jd": updated_jd}
+
+
+# ── Memory System ──────────────────────────────────────
+
+@router.get("/memory")
+def get_memory(user_id: int = None, db: Session = Depends(get_db)):
+    """Get user's learned JD preferences."""
+    if not user_id:
+        return {"preferences_summary": None, "total_jds_analyzed": 0}
+
+    memory = db.query(JDMemory).filter(JDMemory.user_id == user_id).first()
+    if not memory:
+        return {"preferences_summary": None, "total_jds_analyzed": 0}
+
+    return {
+        "preferences_summary": memory.preferences_summary,
+        "edit_patterns": memory.edit_patterns,
+        "total_jds_analyzed": memory.total_jds_analyzed,
+        "last_analyzed_at": memory.last_analyzed_at.isoformat() if memory.last_analyzed_at else None,
+    }
+
+
+@router.post("/memory/analyze")
+def analyze_memory(payload: dict, db: Session = Depends(get_db)):
+    """Analyze a completed JD session and update user memory."""
+    user_id = payload.get("user_id")
+    initial_prompt = payload.get("initial_prompt", "")
+    final_jd = payload.get("final_jd", "")
+    edit_history = payload.get("edit_history", [])
+
+    if not user_id or not final_jd:
+        return {"error": "user_id and final_jd are required"}
+
+    # Get existing memory
+    memory = db.query(JDMemory).filter(JDMemory.user_id == user_id).first()
+    existing_prefs = memory.preferences_summary if memory else ""
+    total = (memory.total_jds_analyzed if memory else 0)
+
+    # Run analysis
+    result = analyze_session(
+        initial_prompt=initial_prompt,
+        final_jd=final_jd,
+        edit_history=edit_history,
+        existing_preferences=existing_prefs,
+        total_jds=total,
+    )
+
+    # Save/update memory
+    if not memory:
+        memory = JDMemory(
+            user_id=user_id,
+            preferences_summary=result.get("preferences_summary", ""),
+            edit_patterns=result.get("patterns", {}),
+            total_jds_analyzed=1,
+            last_analyzed_at=datetime.now(timezone.utc),
+        )
+        db.add(memory)
+    else:
+        memory.preferences_summary = result.get("preferences_summary", memory.preferences_summary)
+        memory.edit_patterns = result.get("patterns", memory.edit_patterns)
+        memory.total_jds_analyzed = total + 1
+        memory.last_analyzed_at = datetime.now(timezone.utc)
+
+    db.commit()
+    db.refresh(memory)
+
+    return {
+        "ok": True,
+        "preferences_summary": memory.preferences_summary,
+        "total_jds_analyzed": memory.total_jds_analyzed,
+    }
 
 
 @router.post("/export-docx")

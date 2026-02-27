@@ -88,7 +88,6 @@ Role: {role}
 Department: {department}
 Location: {location}
 Experience: {experience_phrase}
-Employment Type: {employment_type}
 
 GOOGLE FORM DATA (SECONDARY - Metadata Only):
 {facts}
@@ -109,7 +108,6 @@ OUTPUT FORMAT (STRICTLY FOLLOW)
 # {role}
 
 **Location:** {location}
-**Type:** {employment_type}
 
 ## About Us
 Use the provided About WOGOM content exactly as given. Do not rewrite it.
@@ -209,7 +207,7 @@ def generate_jd(form_data: Dict, profile: Dict = None) -> str:
     data = form_data.copy()
 
     # Required fields
-    REQUIRED_FIELDS = ["role", "employment_type"]
+    REQUIRED_FIELDS = ["role"]
     missing = [f for f in REQUIRED_FIELDS if not data.get(f)]
     if missing:
         raise ValueError(f"Missing required JD fields: {missing}")
@@ -300,7 +298,6 @@ def generate_jd(form_data: Dict, profile: Dict = None) -> str:
         department=data.get("department", ""),
         location=data["location"],
         experience_phrase=experience_phrase,
-        employment_type=data["employment_type"],
         about_wogom=ABOUT_WOGOM_TEXT.strip(),
         profile_json=profile_json,
         facts=facts

@@ -3,7 +3,8 @@ import { useLocation } from 'react-router-dom';
 import {
     Upload, Rocket, Trophy, Search, Filter, Users,
     Brain, Target, ChevronRight, Star, AlertTriangle,
-    CheckCircle, BarChart3, Sparkles, FileText
+    CheckCircle, BarChart3, Sparkles, FileText,
+    CloudDownload, RefreshCw, ExternalLink, UserPlus, X
 } from 'lucide-react';
 import FileUpload from '../components/FileUpload';
 import * as api from '../services/api';
@@ -83,6 +84,17 @@ export default function CandidatePage() {
     // Expanded row tracking
     const [expandedRow, setExpandedRow] = useState(null);
 
+    // ─── Keka State ───
+    const [showKekaModal, setShowKekaModal] = useState(false);
+    const [kekaLoading, setKekaLoading] = useState(false);
+    const [kekaJobs, setKekaJobs] = useState([]);
+    const [selectedKekaJob, setSelectedKekaJob] = useState(null);
+    const [kekaCandidates, setKekaCandidates] = useState([]);
+    const [selectedKekaCandidates, setSelectedKekaCandidates] = useState(new Set());
+    const [kekaImportResult, setKekaImportResult] = useState(null);
+    const [kekaError, setKekaError] = useState('');
+    const [kekaStep, setKekaStep] = useState('jobs'); // 'jobs' | 'candidates' | 'result'
+
     // ─── Step 1: Parse profile ───
     const handleProfileSubmit = () => {
         setError('');
@@ -134,6 +146,82 @@ export default function CandidatePage() {
             setError(err.message || 'CV evaluation failed.');
         }
         setLoading(false);
+    };
+
+    // ─── Keka Functions ───
+    const openKekaModal = async () => {
+        setShowKekaModal(true);
+        setKekaStep('jobs');
+        setKekaError('');
+        setKekaImportResult(null);
+        setSelectedKekaJob(null);
+        setKekaCandidates([]);
+        setSelectedKekaCandidates(new Set());
+        await loadKekaJobs();
+    };
+
+    const loadKekaJobs = async () => {
+        setKekaLoading(true);
+        setKekaError('');
+        try {
+            const jobs = await api.listKekaJobs();
+            setKekaJobs(Array.isArray(jobs) ? jobs : []);
+        } catch (err) {
+            setKekaError(err.message || 'Failed to connect to Keka. Check your API credentials.');
+        }
+        setKekaLoading(false);
+    };
+
+    const selectKekaJob = async (job) => {
+        setSelectedKekaJob(job);
+        setKekaStep('candidates');
+        setKekaLoading(true);
+        setKekaError('');
+        try {
+            const candidates = await api.listKekaCandidates(job.id);
+            setKekaCandidates(Array.isArray(candidates) ? candidates : []);
+            // Select all by default
+            const allIds = new Set((Array.isArray(candidates) ? candidates : []).map(c => c.id));
+            setSelectedKekaCandidates(allIds);
+        } catch (err) {
+            setKekaError(err.message || 'Failed to fetch candidates.');
+        }
+        setKekaLoading(false);
+    };
+
+    const toggleCandidate = (id) => {
+        setSelectedKekaCandidates(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    };
+
+    const toggleAllCandidates = () => {
+        if (selectedKekaCandidates.size === kekaCandidates.length) {
+            setSelectedKekaCandidates(new Set());
+        } else {
+            setSelectedKekaCandidates(new Set(kekaCandidates.map(c => c.id)));
+        }
+    };
+
+    const handleKekaImport = async (localJobId) => {
+        if (selectedKekaCandidates.size === 0) return;
+        setKekaLoading(true);
+        setKekaError('');
+        try {
+            const result = await api.importKekaCandidates(
+                selectedKekaJob.id,
+                localJobId,
+                Array.from(selectedKekaCandidates)
+            );
+            setKekaImportResult(result);
+            setKekaStep('result');
+        } catch (err) {
+            setKekaError(err.message || 'Import failed.');
+        }
+        setKekaLoading(false);
     };
 
     const currentStepIdx = STEPS.findIndex(s => s.id === step);
@@ -314,13 +402,45 @@ export default function CandidatePage() {
                         Each will be evaluated against the {personas.length} persona(s) generated above.
                     </p>
 
-                    <div style={{ maxWidth: 400 }}>
-                        <FileUpload
-                            label="Resumes (ZIP, PDF, DOCX)"
-                            accept=".zip,.pdf,.docx"
-                            onFile={setResumeFile}
-                            id="cv-upload"
-                        />
+                    {/* Upload + Keka side-by-side */}
+                    <div className="upload-options-grid">
+                        {/* Option 1: File Upload */}
+                        <div className="upload-option-card">
+                            <div className="upload-option-icon">
+                                <Upload size={24} />
+                            </div>
+                            <h4>Upload Files</h4>
+                            <p>Upload resumes as ZIP, PDF, or DOCX</p>
+                            <div style={{ maxWidth: 320, margin: '0 auto' }}>
+                                <FileUpload
+                                    label="Resumes (ZIP, PDF, DOCX)"
+                                    accept=".zip,.pdf,.docx"
+                                    onFile={setResumeFile}
+                                    id="cv-upload"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Divider */}
+                        <div className="upload-divider">
+                            <span>OR</span>
+                        </div>
+
+                        {/* Option 2: Import from Keka */}
+                        <div className="upload-option-card keka-option">
+                            <div className="upload-option-icon keka-icon">
+                                <CloudDownload size={24} />
+                            </div>
+                            <h4>Import from Keka</h4>
+                            <p>Browse Keka Hire jobs and import candidates directly</p>
+                            <button
+                                className="btn btn-keka"
+                                onClick={openKekaModal}
+                                id="open-keka-btn"
+                            >
+                                <CloudDownload size={16} /> Browse Keka Jobs
+                            </button>
+                        </div>
                     </div>
 
                     <div className="mt-lg">
@@ -525,6 +645,234 @@ export default function CandidatePage() {
                             <CheckCircle size={14} /> {ranking.notes}
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* ═══ KEKA IMPORT MODAL ═══ */}
+            {showKekaModal && (
+                <div className="keka-modal-overlay" onClick={() => setShowKekaModal(false)}>
+                    <div className="keka-modal" onClick={e => e.stopPropagation()}>
+                        {/* Modal Header */}
+                        <div className="keka-modal-header">
+                            <div className="flex items-center gap-sm">
+                                <CloudDownload size={20} />
+                                <h2>Import from Keka Hire</h2>
+                            </div>
+                            <button className="keka-close-btn" onClick={() => setShowKekaModal(false)}>
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        {/* Modal breadcrumb */}
+                        <div className="keka-breadcrumb">
+                            <button
+                                className={`keka-crumb ${kekaStep === 'jobs' ? 'active' : ''}`}
+                                onClick={() => { setKekaStep('jobs'); setSelectedKekaJob(null); }}
+                            >
+                                Jobs
+                            </button>
+                            {selectedKekaJob && (
+                                <>
+                                    <ChevronRight size={14} />
+                                    <span className={`keka-crumb ${kekaStep === 'candidates' ? 'active' : ''}`}>
+                                        {selectedKekaJob.title}
+                                    </span>
+                                </>
+                            )}
+                            {kekaStep === 'result' && (
+                                <>
+                                    <ChevronRight size={14} />
+                                    <span className="keka-crumb active">Results</span>
+                                </>
+                            )}
+                        </div>
+
+                        {/* Error */}
+                        {kekaError && (
+                            <div className="alert alert-error" style={{ margin: '0 24px 16px' }}>
+                                <AlertTriangle size={14} /> {kekaError}
+                            </div>
+                        )}
+
+                        {/* Modal Body */}
+                        <div className="keka-modal-body">
+                            {/* Loading spinner */}
+                            {kekaLoading && (
+                                <div className="keka-loading">
+                                    <div className="spinner" style={{ width: 32, height: 32, borderWidth: 3 }} />
+                                    <span>Loading from Keka…</span>
+                                </div>
+                            )}
+
+                            {/* STEP: Jobs list */}
+                            {kekaStep === 'jobs' && !kekaLoading && (
+                                <>
+                                    {kekaJobs.length === 0 ? (
+                                        <div className="keka-empty">
+                                            <CloudDownload size={40} />
+                                            <p>No jobs found in Keka, or connection failed.</p>
+                                            <button className="btn btn-secondary" onClick={loadKekaJobs}>
+                                                <RefreshCw size={14} /> Retry
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="keka-jobs-list">
+                                            {kekaJobs.map(job => (
+                                                <button
+                                                    key={job.id}
+                                                    className="keka-job-item"
+                                                    onClick={() => selectKekaJob(job)}
+                                                >
+                                                    <div className="keka-job-info">
+                                                        <h4>{job.title}</h4>
+                                                        <div className="keka-job-meta">
+                                                            {job.department && <span>{job.department}</span>}
+                                                            {job.location && <span>📍 {job.location}</span>}
+                                                            {job.positions && <span>{job.positions} positions</span>}
+                                                        </div>
+                                                    </div>
+                                                    <div className="keka-job-actions">
+                                                        {job.status && (
+                                                            <span className={`keka-status keka-status-${(job.status || '').toLowerCase()}`}>
+                                                                {job.status}
+                                                            </span>
+                                                        )}
+                                                        <ChevronRight size={16} />
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </>
+                            )}
+
+                            {/* STEP: Candidates list */}
+                            {kekaStep === 'candidates' && !kekaLoading && (
+                                <>
+                                    {kekaCandidates.length === 0 ? (
+                                        <div className="keka-empty">
+                                            <Users size={40} />
+                                            <p>No candidates found for this job.</p>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="keka-select-bar">
+                                                <label className="keka-checkbox-label">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedKekaCandidates.size === kekaCandidates.length}
+                                                        onChange={toggleAllCandidates}
+                                                    />
+                                                    Select all ({kekaCandidates.length})
+                                                </label>
+                                                <span className="text-sm text-muted">
+                                                    {selectedKekaCandidates.size} selected
+                                                </span>
+                                            </div>
+
+                                            <div className="keka-candidates-list">
+                                                {kekaCandidates.map(c => (
+                                                    <label key={c.id} className={`keka-candidate-item ${selectedKekaCandidates.has(c.id) ? 'selected' : ''}`}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedKekaCandidates.has(c.id)}
+                                                            onChange={() => toggleCandidate(c.id)}
+                                                        />
+                                                        <div className="keka-candidate-info">
+                                                            <div className="keka-candidate-name">
+                                                                {[c.first_name, c.last_name].filter(Boolean).join(' ') || 'Unknown'}
+                                                            </div>
+                                                            <div className="keka-candidate-details">
+                                                                {c.email && <span>{c.email}</span>}
+                                                                {c.phone && <span>{c.phone}</span>}
+                                                                {c.stage && (
+                                                                    <span className="badge badge-info" style={{ fontSize: '0.65rem' }}>
+                                                                        {c.stage}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        {c.has_resume && (
+                                                            <span className="keka-resume-badge" title="Has resume">
+                                                                <FileText size={12} />
+                                                            </span>
+                                                        )}
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
+                                </>
+                            )}
+
+                            {/* STEP: Import result */}
+                            {kekaStep === 'result' && kekaImportResult && (
+                                <div className="keka-import-result">
+                                    <div className="keka-result-icon">
+                                        <CheckCircle size={48} />
+                                    </div>
+                                    <h3>Import Complete</h3>
+                                    <div className="keka-result-stats">
+                                        <div className="keka-result-stat">
+                                            <span className="keka-result-num imported">{kekaImportResult.imported}</span>
+                                            <span>Imported</span>
+                                        </div>
+                                        <div className="keka-result-stat">
+                                            <span className="keka-result-num skipped">{kekaImportResult.skipped}</span>
+                                            <span>Skipped (duplicate)</span>
+                                        </div>
+                                        {kekaImportResult.errors?.length > 0 && (
+                                            <div className="keka-result-stat">
+                                                <span className="keka-result-num errors">{kekaImportResult.errors.length}</span>
+                                                <span>Errors</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    {kekaImportResult.candidates?.length > 0 && (
+                                        <div className="keka-imported-list">
+                                            <h4>Imported Candidates</h4>
+                                            {kekaImportResult.candidates.map((c, i) => (
+                                                <div key={i} className="keka-imported-item">
+                                                    <UserPlus size={14} />
+                                                    <span>{c.name}</span>
+                                                    <span className="text-muted">{c.email}</span>
+                                                    <span className="badge badge-info" style={{ fontSize: '0.65rem' }}>{c.stage}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <button
+                                        className="btn btn-primary mt-lg"
+                                        onClick={() => setShowKekaModal(false)}
+                                    >
+                                        Done
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Modal Footer — Import button */}
+                        {kekaStep === 'candidates' && !kekaLoading && kekaCandidates.length > 0 && (
+                            <div className="keka-modal-footer">
+                                <button
+                                    className="btn btn-keka btn-lg"
+                                    disabled={selectedKekaCandidates.size === 0 || kekaLoading}
+                                    onClick={() => {
+                                        // Use the job ID from navigation state if available, otherwise use 0
+                                        const localJobId = location.state?.jobId || 0;
+                                        if (!localJobId) {
+                                            setKekaError('No local job ID found. Please navigate here from a job request.');
+                                            return;
+                                        }
+                                        handleKekaImport(localJobId);
+                                    }}
+                                >
+                                    <CloudDownload size={16} />
+                                    Import {selectedKekaCandidates.size} Candidate{selectedKekaCandidates.size !== 1 ? 's' : ''}
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
             )}
         </div>

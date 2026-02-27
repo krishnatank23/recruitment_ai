@@ -1,342 +1,173 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
-    ArrowLeft,
-    ArrowRight,
-    Building2,
-    MapPin,
-    Clock,
-    Send,
-    Download,
-    RefreshCw,
-    FileText,
-    Briefcase,
-    Edit3,
-    PlusCircle,
-    Search,
-    Trash2,
-    User,
-    GraduationCap,
-    Zap,
-    Globe,
-    Plane,
+    ArrowRight, Send, Download, RefreshCw,
+    FileText, Sparkles, Brain, CheckCircle2, Briefcase, Calendar, Edit3,
 } from 'lucide-react';
 import StepProgress from '../components/StepProgress';
 import JdPreview from '../components/JdPreview';
 import * as api from '../services/api';
 import './RecruiterPage.css';
 
-const EMPTY_FORM = {
-    role: '',
-    department: '',
-    location: '',
-    employment_type: 'Full-time',
-    travel_required: '',
-    work_mode: '',
-    key_responsibilities: '',
-    reporting_to: '',
-    new_or_scaling: '',
-    must_have_skills: '',
-    other_skills: '',
-    minimum_education: '',
-    experience: '',
-    urgency: '',
-    salary: '',
-};
+const EXPERIENCE_OPTIONS = [
+    'Fresher',
+    '1–2 years',
+    '3–5 years',
+    '5–8 years',
+    '8–12 years',
+    '12+ years',
+];
 
 export default function RecruiterPage() {
-    // ── wizard state ──
+    const navigate = useNavigate();
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
-    // ── Step 1 tab: 'saved' | 'new' ──
-    const [inputMode, setInputMode] = useState('saved');
-    const [manualForm, setManualForm] = useState({ ...EMPTY_FORM });
-    const [savedForms, setSavedForms] = useState([]);
-    const [formSearch, setFormSearch] = useState('');
+    const user = api.getUser();
+    const userId = user?.id || null;
+    const department = user?.department || '';
 
-    // ── data across steps ──
-    const [roles, setRoles] = useState([]);
-    const [selectedRole, setSelectedRole] = useState(null);
-    const [jdData, setJdData] = useState({});
+    // ── Step 1 state ──
+    const [jobName, setJobName] = useState('');
+    const [experience, setExperience] = useState('');
+    const [specificRequests, setSpecificRequests] = useState('');
 
+    // ── Step 2 state ──
     const [questions, setQuestions] = useState([]);
-    const [answers, setAnswers] = useState({});
+    const [answers, setAnswers] = useState({});     // { q1: ['opt1','opt3'], q2: [...] }
 
+    // ── Step 3 state ──
     const [profile, setProfile] = useState(null);
-
-    // Step 4 — Choose Title
-    const [suggestedRoles, setSuggestedRoles] = useState([]);
-    const [chosenRole, setChosenRole] = useState('');
-    const [customRole, setCustomRole] = useState('');
-    const [showCustomInput, setShowCustomInput] = useState(false);
-    const [roleChatHistory, setRoleChatHistory] = useState([]);
-    const [roleChatInput, setRoleChatInput] = useState('');
-
-    const [draftJd, setDraftJd] = useState('');
     const [finalJd, setFinalJd] = useState('');
-
     const [chatHistory, setChatHistory] = useState([]);
     const [chatInput, setChatInput] = useState('');
     const [sessionId] = useState(() => Date.now().toString());
 
-    // ── helpers ──
+    // ── Step 4 state ──
+    const [closureDate, setClosureDate] = useState('');
+    const [hasMemory, setHasMemory] = useState(false);
+
+    useEffect(() => {
+        if (userId) {
+            api.getMemory(userId)
+                .then((res) => { if (res.preferences_summary) setHasMemory(true); })
+                .catch(() => { });
+        }
+    }, [userId]);
+
+    // Auto-fill from job request (sessionStorage)
+    useEffect(() => {
+        const data = sessionStorage.getItem('jd_from_job_request');
+        if (data) {
+            try {
+                const { role, closureDate } = JSON.parse(data);
+                if (role) setJobName(role);
+                if (closureDate) setClosureDate(closureDate);
+                sessionStorage.removeItem('jd_from_job_request');
+            } catch (_) { }
+        }
+    }, []);
+
     const handleError = (err) => {
         console.error(err);
         setError(err.message || 'Something went wrong');
         setLoading(false);
     };
 
-    // ═══════════════════════════════════
-    // STEP 1 — Select or Create Form
-    // ═══════════════════════════════════
-    const rolesLoadedRef = useRef(false);
-
-    useEffect(() => {
-        if (rolesLoadedRef.current) return;
-        rolesLoadedRef.current = true;
-
-        async function loadSavedForms() {
-            setLoading(true);
-            setError('');
-            try {
-                const data = await api.fetchSavedForms();
-                setSavedForms(data || []);
-            } catch (err) {
-                console.error(err);
-                setError(err.message || 'Failed to load saved forms');
-            }
-            setLoading(false);
-        }
-
-        loadSavedForms();
-    }, []);
-
-    const selectRole = (role) => {
-        if (selectedRole === role.role && jdData.id === role.id) {
-            setSelectedRole(null);
-            setJdData({});
-            return;
-        }
-        setSelectedRole(role.role);
-        setJdData(role);
-    };
-
-    const updateManualField = (field, value) => {
-        setManualForm((prev) => ({ ...prev, [field]: value }));
-    };
-
-    const applyManualForm = async () => {
-        setSelectedRole(manualForm.role);
-        setJdData({ ...manualForm });
-        // Save to DB so it appears in "Saved Forms" next time
-        try {
-            const saved = await api.saveForm(manualForm);
-            setSavedForms((prev) => [saved, ...prev]);
-        } catch (err) {
-            console.error('Failed to save form:', err);
-        }
-    };
-
-    const deleteSavedForm = async (formId, e) => {
-        e.stopPropagation();
-        try {
-            await api.deleteForm(formId);
-            setSavedForms((prev) => prev.filter((f) => f.id !== formId));
-            if (jdData.id === formId) {
-                setSelectedRole(null);
-                setJdData({});
-            }
-        } catch (err) {
-            console.error('Failed to delete form:', err);
-        }
-    };
-
-    const isManualFormValid = () => {
-        return manualForm.role.trim() && manualForm.department.trim();
-    };
-
-    const filteredForms = savedForms.filter((f) => {
-        if (!formSearch.trim()) return true;
-        const q = formSearch.toLowerCase();
-        return (
-            (f.role || '').toLowerCase().includes(q) ||
-            (f.department || '').toLowerCase().includes(q) ||
-            (f.location || '').toLowerCase().includes(q)
-        );
-    });
-
-    // ═══════════════════════════════════
-    // STEP 2 — Clarify
-    // ═══════════════════════════════════
-    const loadQuestions = async () => {
-        setStep(2);
-        if (questions.length) return;
+    // ── Step 1 → 2: Generate clarifying questions ──
+    const handleGenerateQuestions = async () => {
+        if (!jobName.trim()) return;
         setLoading(true);
         setError('');
         try {
-            const res = await api.clarifyJd(jdData);
+            const formData = {
+                role: jobName.trim(),
+                department: department,
+                experience: experience,
+                additional_info: specificRequests.trim(),
+            };
+            const res = await api.clarifyJd(formData);
             setQuestions(res.questions || []);
-        } catch (err) {
-            handleError(err);
-        }
+            setAnswers({});
+            setStep(2);
+        } catch (err) { handleError(err); }
         setLoading(false);
     };
 
-    const toggleAnswer = (qIdx, option) => {
-        setAnswers((prev) => {
-            const current = prev[qIdx] || [];
-            const next = current.includes(option)
-                ? current.filter((o) => o !== option)
+    // ── Toggle answer for a question ──
+    const toggleAnswer = (questionId, option) => {
+        setAnswers(prev => {
+            const current = prev[questionId] || [];
+            const updated = current.includes(option)
+                ? current.filter(o => o !== option)
                 : [...current, option];
-            return { ...prev, [qIdx]: next };
+            return { ...prev, [questionId]: updated };
         });
     };
 
-    // ═══════════════════════════════════
-    // STEP 3 — Profile
-    // ═══════════════════════════════════
-    const loadProfile = async () => {
-        setStep(3);
-        if (profile) return;
+    // ── Step 2 → 3: Build profile + generate JD ──
+    const handleGenerateJd = async () => {
         setLoading(true);
         setError('');
         try {
-            const formatted = questions.map((q, i) => ({
-                id: q.id,
+            const formData = {
+                role: jobName.trim(),
+                department: department,
+                experience: experience,
+                additional_info: specificRequests.trim(),
+            };
+            // Flatten answers for the profile builder
+            const answersList = questions.map(q => ({
                 question: q.question,
-                answer: answers[i] || [],
-                target_section: q.target_section || '',
+                selected: answers[q.id] || [],
             }));
-            const res = await api.buildProfile({
-                form_data: jdData,
-                answers: formatted,
-            });
-            setProfile(res.profile);
-            if (jdData.id) {
-                api.updateFormProfile(jdData.id, res.profile).catch(() => { });
-            }
-        } catch (err) {
-            handleError(err);
-        }
-        setLoading(false);
-    };
 
-    // ═══════════════════════════════════
-    // STEP 4 — Choose Title
-    // ═══════════════════════════════════
-    const loadSuggestions = async () => {
-        setStep(4);
-        if (suggestedRoles.length > 0) return;
-        setLoading(true);
-        setError('');
-        try {
-            const res = await api.suggestRoles(profile);
-            setSuggestedRoles(res.suggestions || []);
-            // Auto-select the first (original) role
-            if (res.suggestions && res.suggestions.length > 0) {
-                setChosenRole(res.suggestions[0]);
-            }
-        } catch (err) {
-            handleError(err);
-            // Fallback: use original role from profile
-            const fallback = profile?.role || selectedRole || 'Unknown Role';
-            setSuggestedRoles([fallback]);
-            setChosenRole(fallback);
-        }
-        setLoading(false);
-    };
-
-    const confirmTitle = () => {
-        const finalTitle = showCustomInput && customRole.trim()
-            ? customRole.trim()
-            : chosenRole;
-        setChosenRole(finalTitle);
-        generateDraft(finalTitle);
-    };
-
-    const refineRoles = async () => {
-        if (!roleChatInput.trim()) return;
-        setLoading(true);
-        try {
-            const res = await api.suggestRoles(profile, roleChatInput.trim());
-            setSuggestedRoles(res.suggestions || []);
-            setRoleChatHistory(prev => [
-                ...prev,
-                { type: 'user', text: roleChatInput.trim() },
-                { type: 'system', text: `Generated ${res.suggestions.length} new titles.` }
+            // Build profile + generate JD in parallel
+            const [profileRes, jdRes] = await Promise.all([
+                api.buildProfile({ form_data: formData, answers: answersList }),
+                api.generateJd({ form_data: formData, profile: null }),
             ]);
-            setRoleChatInput('');
-        } catch (err) {
-            handleError(err);
-        }
-        setLoading(false);
-    };
 
-    // ═══════════════════════════════════
-    // STEP 5 — Draft JD
-    // ═══════════════════════════════════
-    const generateDraft = async (roleOverride) => {
-        setStep(5);
-        if (draftJd) return;
-        setLoading(true);
-        setError('');
-        try {
-            const usedRole = roleOverride || chosenRole || selectedRole;
-            const updatedFormData = { ...jdData, role: usedRole };
-            const updatedProfile = { ...profile, role: usedRole };
-            const res = await api.generateJd({
-                form_data: updatedFormData,
-                profile: updatedProfile,
-            });
-            setDraftJd(res.jd);
-            setFinalJd(res.jd);
-            if (jdData.id) {
-                api.updateFormJd(jdData.id, res.jd).catch(() => { });
+            const builtProfile = profileRes.profile || null;
+            setProfile(builtProfile);
+
+            // If we got a profile, regenerate JD with it for better quality
+            if (builtProfile) {
+                const betterJd = await api.generateJd({ form_data: formData, profile: builtProfile });
+                setFinalJd(betterJd.jd || jdRes.jd || '');
+            } else {
+                setFinalJd(jdRes.jd || '');
             }
-        } catch (err) {
-            handleError(err);
-        }
+
+            setStep(3);
+        } catch (err) { handleError(err); }
         setLoading(false);
     };
 
-    // ═══════════════════════════════════
-    // STEP 6 — Refine
-    // ═══════════════════════════════════
+    // ── Step 3: Refine JD via chat ──
     const applyRefinement = async () => {
         if (!chatInput.trim()) return;
         setLoading(true);
         setError('');
         try {
-            const res = await api.refineJd({
-                jd: finalJd,
-                instruction: chatInput.trim(),
-                role: chosenRole || selectedRole,
-                session_id: sessionId,
+            const res = await api.chatRefineJd({
+                jd: finalJd, instruction: chatInput.trim(),
+                user_id: userId, role: jobName, session_id: sessionId,
             });
             setFinalJd(res.jd);
-            if (jdData.id) {
-                api.updateFormJd(jdData.id, res.jd).catch(() => { });
-            }
-            setChatHistory((prev) => [
-                ...prev,
-                { instruction: chatInput.trim(), version: prev.length + 1 },
-            ]);
+            setChatHistory(prev => [...prev, { instruction: chatInput.trim(), version: prev.length + 1 }]);
             setChatInput('');
-        } catch (err) {
-            handleError(err);
-        }
+        } catch (err) { handleError(err); }
         setLoading(false);
     };
 
-    // ═══════════════════════════════════
-    // STEP 7 — Export
-    // ═══════════════════════════════════
+    // ── Step 4: Export ──
     const downloadDocx = async () => {
         setLoading(true);
         setError('');
         try {
-            const usedRole = chosenRole || selectedRole || 'Job_Description';
+            const usedRole = jobName || 'Job_Description';
             const blob = await api.exportDocx(finalJd, usedRole);
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -344,954 +175,338 @@ export default function RecruiterPage() {
             a.download = `${usedRole.replace(/\s/g, '_')}_JD.docx`;
             a.click();
             URL.revokeObjectURL(url);
-        } catch (err) {
-            handleError(err);
-        }
+            if (userId) {
+                api.analyzeMemory({
+                    user_id: userId, initial_prompt: `${jobName} - ${experience}`,
+                    final_jd: finalJd, edit_history: chatHistory,
+                }).catch(() => { });
+            }
+        } catch (err) { handleError(err); }
         setLoading(false);
     };
 
     const startOver = () => {
-        setStep(1);
-        setInputMode('saved');
-        setManualForm({ ...EMPTY_FORM });
-        setFormSearch('');
-        setSelectedRole(null);
-        setJdData({});
-        setQuestions([]);
-        setAnswers({});
-        setProfile(null);
-        setSuggestedRoles([]);
-        setChosenRole('');
-        setCustomRole('');
-        setShowCustomInput(false);
-        setRoleChatHistory([]);
-        setRoleChatInput('');
-        setDraftJd('');
-        setFinalJd('');
-        setChatHistory([]);
-        setChatInput('');
-        setError('');
+        setStep(1); setJobName(''); setExperience(''); setSpecificRequests('');
+        setQuestions([]); setAnswers({}); setProfile(null);
+        setFinalJd(''); setChatHistory([]); setChatInput('');
+        setClosureDate(''); setError('');
     };
 
-    // ═══════════════════════════════════
-    // RENDER
-    // ═══════════════════════════════════
     return (
         <div className="recruiter-page">
-            {/* Page Header */}
-            <div className="page-header animate-fade-in">
-                <div className="flex items-center gap-sm">
-                    <FileText size={20} style={{ color: 'var(--accent-primary)' }} />
-                    <h1>JD Generator</h1>
+            {/* ── Hero Header ── */}
+            <div className="jd-hero">
+                <div className="jd-hero-content">
+                    <div className="jd-hero-icon">
+                        <Sparkles size={24} />
+                    </div>
+                    <div>
+                        <h1 className="jd-hero-title">JD Creator</h1>
+                        <p className="jd-hero-sub">Generate professional job descriptions with AI in seconds</p>
+                    </div>
                 </div>
-                <p>Create professional job descriptions in 7 easy steps</p>
+                {hasMemory && (
+                    <div className="jd-memory-pill">
+                        <Brain size={14} />
+                        <span>AI remembers your preferences</span>
+                    </div>
+                )}
             </div>
 
             <StepProgress current={step} />
 
             {error && (
-                <div className="alert alert-error mb-lg">
+                <div className="jd-error">
                     ⚠️ {error}
-                    <button className="btn btn-ghost text-sm" onClick={() => setError('')}>
-                        Dismiss
-                    </button>
+                    <button onClick={() => setError('')}>✕</button>
                 </div>
             )}
 
-            {/* ── STEP 1 ── */}
+            {/* ════════ STEP 1: Job Details ════════ */}
             {step === 1 && (
-                <div className="step-content animate-fade-in-up">
-                    {/* ── Tab switcher ── */}
-                    <div className="input-mode-tabs">
-                        <button
-                            className={`mode-tab ${inputMode === 'saved' ? 'active' : ''}`}
-                            onClick={() => {
-                                setInputMode('saved');
-                                setSelectedRole(null);
-                                setJdData({});
-                            }}
-                        >
-                            <Briefcase size={15} />
-                            <span>Saved Forms</span>
-                            {savedForms.length > 0 && (
-                                <span className="tab-badge">{savedForms.length}</span>
-                            )}
-                        </button>
-                        <button
-                            className={`mode-tab ${inputMode === 'new' ? 'active' : ''}`}
-                            onClick={() => {
-                                setInputMode('new');
-                                setSelectedRole(null);
-                                setJdData({});
-                            }}
-                        >
-                            <PlusCircle size={15} />
-                            <span>Create New</span>
-                        </button>
-                    </div>
-
-                    {/* ── Saved Forms Tab ── */}
-                    {inputMode === 'saved' && (
-                        <div className="saved-forms-section">
-                            {loading ? (
-                                <div className="loading-overlay">
-                                    <div className="spinner" />
-                                    <span>Loading saved forms…</span>
-                                </div>
-                            ) : savedForms.length === 0 ? (
-                                <div className="empty-state">
-                                    <div className="empty-state-icon">
-                                        <FileText size={40} />
-                                    </div>
-                                    <h4>No saved forms yet</h4>
-                                    <p>Create your first JD intake form to get started.</p>
-                                    <button
-                                        className="btn btn-primary"
-                                        onClick={() => setInputMode('new')}
-                                    >
-                                        <PlusCircle size={14} /> Create New Form
-                                    </button>
-                                </div>
-                            ) : (
-                                <>
-                                    <div className="search-bar">
-                                        <Search size={16} className="search-icon" />
-                                        <input
-                                            className="input search-input"
-                                            placeholder="Search by role, department, or location…"
-                                            value={formSearch}
-                                            onChange={(e) => setFormSearch(e.target.value)}
-                                        />
-                                    </div>
-
-                                    <div
-                                        className="saved-forms-grid"
-                                        onClick={(e) => {
-                                            if (e.target === e.currentTarget) {
-                                                setSelectedRole(null);
-                                                setJdData({});
-                                            }
-                                        }}
-                                    >
-                                        {filteredForms.map((form) => (
-                                            <div
-                                                key={form.id}
-                                                className={`saved-form-card ${selectedRole === form.role && jdData.id === form.id ? 'selected' : ''}`}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    selectRole(form);
-                                                }}
-                                            >
-                                                <div className="saved-form-header">
-                                                    <div className="saved-form-title">
-                                                        <Briefcase size={16} className="saved-form-icon" />
-                                                        <span>{form.role}</span>
-                                                    </div>
-                                                    <button
-                                                        className="btn-icon-sm delete-btn"
-                                                        onClick={(e) => deleteSavedForm(form.id, e)}
-                                                        title="Delete form"
-                                                    >
-                                                        <Trash2 size={13} />
-                                                    </button>
-                                                </div>
-                                                <div className="saved-form-tags">
-                                                    {form.department && (
-                                                        <span className="form-tag">
-                                                            <Building2 size={11} /> {form.department}
-                                                        </span>
-                                                    )}
-                                                    {form.location && (
-                                                        <span className="form-tag">
-                                                            <MapPin size={11} /> {form.location}
-                                                        </span>
-                                                    )}
-                                                    {form.employment_type && (
-                                                        <span className="form-tag">
-                                                            <Clock size={11} /> {form.employment_type}
-                                                        </span>
-                                                    )}
-                                                    {form.experience && (
-                                                        <span className="form-tag">
-                                                            <User size={11} /> {form.experience}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                {form.must_have_skills && (
-                                                    <p className="saved-form-skills">
-                                                        {form.must_have_skills}
-                                                    </p>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-
-                                    {filteredForms.length === 0 && formSearch && (
-                                        <p className="text-muted text-sm text-center mt-md">
-                                            No forms match "{formSearch}"
-                                        </p>
-                                    )}
-                                </>
-                            )}
-                        </div>
-                    )}
-
-                    {/* ── New Form Tab ── */}
-                    {inputMode === 'new' && (
-                        <div className="manual-form animate-fade-in">
-                            {/* Section: Basic Info */}
-                            <div className="form-section">
-                                <div className="form-section-header">
-                                    <Briefcase size={16} />
-                                    <span>Basic Information</span>
-                                </div>
-                                <div className="form-grid">
-                                    <div className="form-group">
-                                        <label className="form-label">
-                                            Job Title <span className="required">*</span>
-                                        </label>
-                                        <input
-                                            className="input"
-                                            placeholder="e.g. AI Engineer, Sales Executive"
-                                            value={manualForm.role}
-                                            onChange={(e) => updateManualField('role', e.target.value)}
-                                            autoFocus
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">
-                                            Department <span className="required">*</span>
-                                        </label>
-                                        <input
-                                            className="input"
-                                            placeholder="e.g. Technology, Marketing"
-                                            value={manualForm.department}
-                                            onChange={(e) => updateManualField('department', e.target.value)}
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">
-                                            <MapPin size={13} className="label-icon" /> Location
-                                        </label>
-                                        <input
-                                            className="input"
-                                            placeholder="e.g. Mumbai, Bangalore, Remote"
-                                            value={manualForm.location}
-                                            onChange={(e) => updateManualField('location', e.target.value)}
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">
-                                            <User size={13} className="label-icon" /> Reporting To
-                                        </label>
-                                        <input
-                                            className="input"
-                                            placeholder="e.g. Tech Lead, VP Sales"
-                                            value={manualForm.reporting_to}
-                                            onChange={(e) => updateManualField('reporting_to', e.target.value)}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Section: Work Details */}
-                            <div className="form-section">
-                                <div className="form-section-header">
-                                    <Globe size={16} />
-                                    <span>Work Details</span>
-                                </div>
-                                <div className="form-grid">
-                                    <div className="form-group">
-                                        <label className="form-label">Employment Type</label>
-                                        <div className="radio-group">
-                                            {[
-                                                { label: 'Full-time', icon: <Briefcase size={14} /> },
-                                                { label: 'Contract', icon: <FileText size={14} /> },
-                                                { label: 'Internship', icon: <GraduationCap size={14} /> },
-                                                { label: 'Part-time', icon: <Clock size={14} /> }
-                                            ].map((opt) => (
-                                                <label
-                                                    key={opt.label}
-                                                    className={`radio-card ${manualForm.employment_type === opt.label ? 'selected' : ''}`}
-                                                >
-                                                    <input
-                                                        type="radio"
-                                                        name="employment_type"
-                                                        value={opt.label}
-                                                        checked={manualForm.employment_type === opt.label}
-                                                        onChange={(e) => updateManualField('employment_type', e.target.value)}
-                                                    />
-                                                    {opt.icon}
-                                                    <span>{opt.label}</span>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Work Mode</label>
-                                        <div className="radio-group">
-                                            {[
-                                                { label: 'Remote', icon: <Globe size={14} /> },
-                                                { label: 'On-site', icon: <Building2 size={14} /> },
-                                                { label: 'Hybrid', icon: <MapPin size={14} /> }
-                                            ].map((opt) => (
-                                                <label
-                                                    key={opt.label}
-                                                    className={`radio-card ${manualForm.work_mode === opt.label ? 'selected' : ''}`}
-                                                >
-                                                    <input
-                                                        type="radio"
-                                                        name="work_mode"
-                                                        value={opt.label}
-                                                        checked={manualForm.work_mode === opt.label}
-                                                        onChange={(e) => updateManualField('work_mode', e.target.value)}
-                                                    />
-                                                    {opt.icon}
-                                                    <span>{opt.label}</span>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">
-                                            <Plane size={13} className="label-icon" /> Travel Required?
-                                        </label>
-                                        <select
-                                            className="select"
-                                            value={manualForm.travel_required}
-                                            onChange={(e) => updateManualField('travel_required', e.target.value)}
-                                        >
-                                            <option value="">Select…</option>
-                                            <option value="No">No</option>
-                                            <option value="Occasionally">Occasionally</option>
-                                            <option value="Frequently">Frequently</option>
-                                        </select>
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">
-                                            <Zap size={13} className="label-icon" /> Urgency
-                                        </label>
-                                        <select
-                                            className="select"
-                                            value={manualForm.urgency}
-                                            onChange={(e) => updateManualField('urgency', e.target.value)}
-                                        >
-                                            <option value="">Select…</option>
-                                            <option value="Immediate">Immediate</option>
-                                            <option value="Within 30 Days">Within 30 Days</option>
-                                            <option value="Within 60 Days">Within 60 Days</option>
-                                            <option value="No Rush">No Rush</option>
-                                        </select>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Section: Requirements */}
-                            <div className="form-section">
-                                <div className="form-section-header">
-                                    <GraduationCap size={16} />
-                                    <span>Requirements</span>
-                                </div>
-                                <div className="form-grid">
-                                    <div className="form-group">
-                                        <label className="form-label">Experience Required</label>
-                                        <input
-                                            className="input"
-                                            placeholder="e.g. 2-4 years, Fresher"
-                                            value={manualForm.experience}
-                                            onChange={(e) => updateManualField('experience', e.target.value)}
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">Minimum Education</label>
-                                        <input
-                                            className="input"
-                                            placeholder="e.g. B.Tech, MBA, Any Graduate"
-                                            value={manualForm.minimum_education}
-                                            onChange={(e) => updateManualField('minimum_education', e.target.value)}
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">
-                                            Salary Range
-                                        </label>
-                                        <input
-                                            className="input"
-                                            placeholder="e.g. 8-12 LPA (optional)"
-                                            value={manualForm.salary}
-                                            onChange={(e) => updateManualField('salary', e.target.value)}
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">New Role or Scaling?</label>
-                                        <select
-                                            className="select"
-                                            value={manualForm.new_or_scaling}
-                                            onChange={(e) => updateManualField('new_or_scaling', e.target.value)}
-                                        >
-                                            <option value="">Select…</option>
-                                            <option value="Building something new">Building something new</option>
-                                            <option value="Scaling an existing function">Scaling an existing function</option>
-                                            <option value="Replacement">Replacement</option>
-                                        </select>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Section: Skills & Responsibilities */}
-                            <div className="form-section">
-                                <div className="form-section-header">
-                                    <Edit3 size={16} />
-                                    <span>Skills & Responsibilities</span>
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label">Must-Have Skills (top 3)</label>
-                                    <input
-                                        className="input"
-                                        placeholder="e.g. Python, Communication, Data Analysis"
-                                        value={manualForm.must_have_skills}
-                                        onChange={(e) => updateManualField('must_have_skills', e.target.value)}
-                                    />
-                                </div>
-                                <div className="form-group mt-sm">
-                                    <label className="form-label">Other / Nice-to-Have Skills</label>
-                                    <input
-                                        className="input"
-                                        placeholder="e.g. Excel, SQL, Team Management"
-                                        value={manualForm.other_skills}
-                                        onChange={(e) => updateManualField('other_skills', e.target.value)}
-                                    />
-                                </div>
-                                <div className="form-group mt-sm">
-                                    <label className="form-label">Key Responsibilities</label>
-                                    <textarea
-                                        className="textarea"
-                                        rows={4}
-                                        placeholder="List 4-6 things this person will actually do (one per line)"
-                                        value={manualForm.key_responsibilities}
-                                        onChange={(e) => updateManualField('key_responsibilities', e.target.value)}
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Summary Preview */}
-                            {isManualFormValid() && (
-                                <div className="form-preview">
-                                    <div className="form-preview-header">Summary</div>
-                                    <div className="role-info">
-                                        <div className="role-chip accent">
-                                            <Briefcase size={12} />
-                                            {manualForm.role}
-                                        </div>
-                                        <div className="role-chip">
-                                            <Building2 size={12} />
-                                            {manualForm.department}
-                                        </div>
-                                        {manualForm.location && (
-                                            <div className="role-chip">
-                                                <MapPin size={12} />
-                                                {manualForm.location}
-                                            </div>
-                                        )}
-                                        {manualForm.experience && (
-                                            <div className="role-chip">
-                                                <Clock size={12} />
-                                                {manualForm.experience}
-                                            </div>
-                                        )}
-                                        {manualForm.employment_type && (
-                                            <div className="role-chip">
-                                                {manualForm.employment_type}
-                                            </div>
-                                        )}
-                                        {manualForm.work_mode && (
-                                            <div className="role-chip">
-                                                <Globe size={12} />
-                                                {manualForm.work_mode}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    <div className="step-nav">
-                        <div />
-                        <button
-                            className="btn btn-primary"
-                            disabled={
-                                inputMode === 'saved'
-                                    ? !selectedRole
-                                    : !isManualFormValid()
-                            }
-                            onClick={() => {
-                                if (inputMode === 'new') applyManualForm();
-                                loadQuestions();
-                            }}
-                        >
-                            Continue <ArrowRight size={14} />
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* ── STEP 2 ── */}
-            {step === 2 && (
-                <div className="step-content animate-fade-in-up">
-                    <div className="card">
-                        <h3 className="section-heading">
-                            Clarifying Questions — {jdData.department || ''} Head Perspective
+                <div className="jd-step animate-fade-in-up">
+                    <div className="jd-details-card">
+                        <h3 className="jd-details-title">
+                            <FileText size={18} /> Tell us about the role
                         </h3>
-                        <p className="text-muted text-sm mb-md">
-                            As the Head of <strong>{jdData.department}</strong>, answer
-                            these questions about the <strong>{selectedRole}</strong> role.
-                        </p>
-
-                        {loading ? (
-                            <div className="loading-overlay">
-                                <div className="spinner" />
-                                <span>Generating clarifying questions…</span>
+                        <div className="jd-details-form">
+                            <div className="jd-form-group">
+                                <label>Job Title *</label>
+                                <input
+                                    type="text"
+                                    value={jobName}
+                                    onChange={e => setJobName(e.target.value)}
+                                    placeholder="e.g. Senior Software Engineer"
+                                />
                             </div>
-                        ) : questions.length === 0 ? (
-                            <div className="alert alert-success">
-                                ✅ No clarifying questions needed — all info is available.
-                            </div>
-                        ) : (
-                            questions.map((q, idx) => (
-                                <div key={idx} className="question-block">
-                                    <p className="question-text">
-                                        <strong>Q{idx + 1}.</strong> {q.question}
-                                    </p>
-                                    <div className="options-group">
-                                        {(q.options || []).map((opt, oi) => {
-                                            const selected = (answers[idx] || []).includes(opt);
-                                            return (
-                                                <button
-                                                    key={oi}
-                                                    className={`option-btn ${selected ? 'selected' : ''}`}
-                                                    onClick={() => toggleAnswer(idx, opt)}
-                                                >
-                                                    {opt}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-
-                    <div className="step-nav">
-                        <button
-                            className="btn btn-secondary"
-                            onClick={() => setStep(1)}
-                        >
-                            <ArrowLeft size={14} /> Back
-                        </button>
-                        <button
-                            className="btn btn-primary"
-                            onClick={loadProfile}
-                            disabled={loading}
-                        >
-                            Build Profile <ArrowRight size={14} />
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* ── STEP 3 ── */}
-            {step === 3 && (
-                <div className="step-content animate-fade-in-up">
-                    {loading ? (
-                        <div className="loading-overlay">
-                            <div className="spinner" />
-                            <span>Building ideal candidate profile…</span>
-                        </div>
-                    ) : profile ? (
-                        <>
-                            <div className="profile-hero">
-                                <div className="profile-hero-title">
-                                    🎯 Ideal Candidate Profile
-                                </div>
-                                <div className="profile-hero-sub">
-                                    {profile.role || selectedRole} —{' '}
-                                    {profile.department || jdData.department} Department
-                                </div>
-                            </div>
-
-                            {profile.profile_summary && (
-                                <div className="alert alert-info mb-lg">
-                                    {profile.profile_summary}
-                                </div>
-                            )}
-
-                            <div className="grid grid-2">
-                                <div className="card">
-                                    <h3 className="section-heading">💡 Core Competencies</h3>
-                                    <div className="chip-group">
-                                        {(profile.core_competencies || []).map((c, i) => (
-                                            <span key={i} className="chip">{c}</span>
-                                        ))}
-                                    </div>
-                                    <h3 className="section-heading mt-lg">🛠️ Must-Have Skills</h3>
-                                    <ul className="skill-list">
-                                        {(profile.must_have_skills_refined || []).map((s, i) => (
-                                            <li key={i}>{s}</li>
-                                        ))}
-                                    </ul>
-                                </div>
-
-                                <div className="card">
-                                    <h3 className="section-heading">🧠 Behavioral Traits</h3>
-                                    <div className="chip-group">
-                                        {(profile.behavioral_traits || []).map((t, i) => (
-                                            <span key={i} className="chip">{t}</span>
-                                        ))}
-                                    </div>
-                                    <h3 className="section-heading mt-lg">✨ Nice-to-Have</h3>
-                                    <ul className="skill-list">
-                                        {(profile.nice_to_have_skills || []).map((s, i) => (
-                                            <li key={i}>{s}</li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            </div>
-
-                            {(profile.success_metrics || []).length > 0 && (
-                                <div className="card mt-lg">
-                                    <h3 className="section-heading">📊 Success Metrics</h3>
-                                    <ul className="skill-list">
-                                        {profile.success_metrics.map((m, i) => (
-                                            <li key={i}>{m}</li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            )}
-
-                            {profile.team_context && (
-                                <div className="alert alert-info mt-md">
-                                    <strong>👥 Team Context:</strong> {profile.team_context}
-                                </div>
-                            )}
-                        </>
-                    ) : null}
-
-                    <div className="step-nav">
-                        <button
-                            className="btn btn-secondary"
-                            onClick={() => {
-                                setProfile(null);
-                                setStep(2);
-                            }}
-                        >
-                            <ArrowLeft size={14} /> Back
-                        </button>
-                        <button
-                            className="btn btn-primary"
-                            onClick={loadSuggestions}
-                            disabled={loading || !profile}
-                        >
-                            Choose Role Title <ArrowRight size={14} />
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* ── STEP 4 — Choose Title ── */}
-            {step === 4 && (
-                <div className="step-content animate-fade-in-up">
-                    {loading ? (
-                        <div className="loading-overlay">
-                            <div className="spinner" />
-                            <span>Generating role title suggestions…</span>
-                        </div>
-                    ) : (
-                        <>
-                            <div className="card mb-lg">
-                                <h3 className="section-heading">
-                                    <Briefcase size={16} /> Choose a Job Title
-                                </h3>
-                                <p className="text-muted text-sm mb-md">
-                                    Select a suggested title or type your own. This title will be
-                                    used throughout the Job Description.
-                                </p>
-
-                                <div className="role-suggestion-grid">
-                                    {suggestedRoles.map((role, i) => (
-                                        <button
-                                            key={i}
-                                            className={`role-suggestion-card ${!showCustomInput && chosenRole === role ? 'selected' : ''
-                                                }`}
-                                            onClick={() => {
-                                                setChosenRole(role);
-                                                setShowCustomInput(false);
-                                            }}
-                                        >
-                                            <span className="role-suggestion-icon">
-                                                {i === 0 ? '⭐' : '💼'}
-                                            </span>
-                                            <span className="role-suggestion-label">
-                                                {role}
-                                            </span>
-                                            {i === 0 && (
-                                                <span className="role-badge">Original</span>
-                                            )}
-                                        </button>
+                            <div className="jd-form-group">
+                                <label>Experience Level</label>
+                                <select value={experience} onChange={e => setExperience(e.target.value)}>
+                                    <option value="">Select experience level</option>
+                                    {EXPERIENCE_OPTIONS.map(opt => (
+                                        <option key={opt} value={opt}>{opt}</option>
                                     ))}
-
-                                    <button
-                                        className={`role-suggestion-card custom-card ${showCustomInput ? 'selected' : ''
-                                            }`}
-                                        onClick={() => setShowCustomInput(true)}
-                                    >
-                                        <span className="role-suggestion-icon"><Edit3 size={16} /></span>
-                                        <span className="role-suggestion-label">Custom Title</span>
-                                    </button>
-                                </div>
-
-                                {showCustomInput && (
-                                    <div className="custom-role-input mt-md">
-                                        <input
-                                            className="input"
-                                            placeholder="Enter your custom job title…"
-                                            value={customRole}
-                                            onChange={(e) => setCustomRole(e.target.value)}
-                                            autoFocus
-                                            id="custom-role-input"
-                                        />
-                                    </div>
-                                )}
+                                </select>
                             </div>
-
-                            {/* Role Chat Interface */}
-                            <div className="card mb-lg" style={{ background: 'var(--slate-50)', border: '1px dashed var(--border-default)' }}>
-                                <div className="section-heading mb-sm">
-                                    <span style={{ fontSize: '0.8rem' }}>🤔 Discuss & Refine Titles</span>
-                                </div>
-
-                                <div className="chat-history simple-chat" style={{ maxHeight: '150px', marginBottom: '8px' }}>
-                                    {roleChatHistory.map((msg, i) => (
-                                        <div key={i} className={`chat-bubble ${msg.type === 'user' ? 'user' : 'system'}`} style={{ fontSize: '0.75rem', padding: '6px 10px' }}>
-                                            {msg.type === 'user' ? '👤' : '🤖'} {msg.text}
-                                        </div>
-                                    ))}
-                                    {roleChatHistory.length === 0 && (
-                                        <p className="text-muted text-xs">Target a specific style? Just ask AI below.</p>
-                                    )}
-                                </div>
-
-                                <div className="chat-input-row">
-                                    <input
-                                        className="input chat-text-input"
-                                        placeholder="e.g. Make them more creative / professional / concise..."
-                                        value={roleChatInput}
-                                        onChange={(e) => setRoleChatInput(e.target.value)}
-                                        onKeyDown={(e) => e.key === 'Enter' && refineRoles()}
-                                        disabled={loading}
-                                        style={{ fontSize: '0.813rem' }}
-                                    />
-                                    <button
-                                        className="btn btn-secondary btn-sm"
-                                        onClick={refineRoles}
-                                        disabled={loading || !roleChatInput.trim()}
-                                    >
-                                        <Send size={12} />
-                                    </button>
-                                </div>
+                            <div className="jd-form-group full-width">
+                                <label>Specific Requests <span className="jd-optional">(optional)</span></label>
+                                <textarea
+                                    value={specificRequests}
+                                    onChange={e => setSpecificRequests(e.target.value)}
+                                    placeholder="e.g. Must know React & Node.js, remote-friendly, leadership experience preferred"
+                                    rows={3}
+                                />
                             </div>
-
-                            <div className="alert alert-info mb-lg">
-                                ✏️ Selected title: <strong>{showCustomInput && customRole.trim() ? customRole.trim() : chosenRole}</strong>
-                            </div>
-                        </>
-                    )}
-
-                    <div className="step-nav">
-                        <button
-                            className="btn btn-secondary"
-                            onClick={() => {
-                                setSuggestedRoles([]);
-                                setChosenRole('');
-                                setStep(3);
-                            }}
-                        >
-                            <ArrowLeft size={14} /> Back to Profile
-                        </button>
-                        <button
-                            className="btn btn-primary"
-                            onClick={confirmTitle}
-                            disabled={loading || (!chosenRole && !(showCustomInput && customRole.trim()))}
-                        >
-                            Generate JD <ArrowRight size={14} />
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* ── STEP 5 — Draft JD ── */}
-            {step === 5 && (
-                <div className="step-content animate-fade-in-up">
-                    {loading ? (
-                        <div className="loading-overlay">
-                            <div className="spinner" />
-                            <span>Generating Job Description…</span>
                         </div>
-                    ) : (
-                        <>
-                            <div className="alert alert-success mb-lg">
-                                ✅ Draft JD generated! Review it below, then proceed to refine.
-                            </div>
-                            <JdPreview markdown={finalJd} />
-                        </>
-                    )}
-
-                    <div className="step-nav">
-                        <button
-                            className="btn btn-secondary"
-                            onClick={() => {
-                                setDraftJd('');
-                                setFinalJd('');
-                                setStep(4);
-                            }}
-                        >
-                            <ArrowLeft size={14} /> Back to Title
-                        </button>
-                        <button
-                            className="btn btn-primary"
-                            onClick={() => setStep(6)}
-                            disabled={loading || !finalJd}
-                        >
-                            Refine with Chat <ArrowRight size={14} />
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* ── STEP 6 — Refine ── */}
-            {step === 6 && (
-                <div className="step-content animate-fade-in-up">
-                    <div className="card">
-                        <h3 className="section-heading">💬 Refine Your JD</h3>
-                        <p className="text-muted text-sm mb-md">
-                            Type an instruction and click <strong>Apply</strong>. Each time
-                            you apply, a new version is generated. Click <strong>Finalize</strong>{' '}
-                            when you're happy.
-                        </p>
-
-                        <div className="chat-history">
-                            {chatHistory.map((entry, i) => (
-                                <div key={i} className="chat-pair">
-                                    <div className="chat-bubble user">
-                                        💬 <strong>You:</strong> {entry.instruction}
-                                    </div>
-                                    <div className="chat-bubble system">
-                                        ✅ Applied — version {entry.version}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-
-                        <div className="chat-input-row">
-                            <input
-                                className="input chat-text-input"
-                                placeholder="e.g. Make it more concise / Add Python requirement"
-                                value={chatInput}
-                                onChange={(e) => setChatInput(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && applyRefinement()}
-                                disabled={loading}
-                                id="refine-input"
-                            />
+                        <div className="jd-step-actions">
                             <button
-                                className="btn btn-primary"
-                                onClick={applyRefinement}
-                                disabled={loading || !chatInput.trim()}
+                                className="jd-btn primary"
+                                disabled={!jobName.trim() || loading}
+                                onClick={handleGenerateQuestions}
                             >
-                                <Send size={14} /> Apply
+                                {loading ? (
+                                    <><div className="jd-spinner" /> Generating…</>
+                                ) : (
+                                    <>Next: Clarifying Questions <ArrowRight size={15} /></>
+                                )}
                             </button>
                         </div>
                     </div>
+                </div>
+            )}
 
-                    <details className="jd-details mt-lg" open>
-                        <summary>📄 Current JD Preview</summary>
-                        <div className="jd-details-body">
-                            <JdPreview markdown={finalJd} />
+            {/* ════════ STEP 2: Clarifying Questions ════════ */}
+            {step === 2 && (
+                <div className="jd-step animate-fade-in-up">
+                    <div className="jd-questions-card">
+                        <h3 className="jd-details-title">
+                            <Sparkles size={18} /> Clarifying Questions
+                        </h3>
+                        <p className="jd-questions-hint">
+                            Select all options that apply for each question. This helps the AI create a more accurate JD.
+                        </p>
+
+                        {questions.length === 0 ? (
+                            <div className="jd-preview-empty">
+                                <p>No questions were generated. Try going back and adding more details.</p>
+                            </div>
+                        ) : (
+                            <div className="jd-questions-list">
+                                {questions.map((q, idx) => (
+                                    <div key={q.id} className="jd-question-item">
+                                        <div className="jd-question-number">{idx + 1}</div>
+                                        <div className="jd-question-body">
+                                            <p className="jd-question-text">{q.question}</p>
+                                            <div className="jd-question-options">
+                                                {q.options.map((opt, oi) => {
+                                                    const isSelected = (answers[q.id] || []).includes(opt);
+                                                    return (
+                                                        <button
+                                                            key={oi}
+                                                            className={`jd-option-btn ${isSelected ? 'selected' : ''}`}
+                                                            onClick={() => toggleAnswer(q.id, opt)}
+                                                        >
+                                                            <span className="jd-option-check">
+                                                                {isSelected ? '✓' : ''}
+                                                            </span>
+                                                            {opt}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        <div className="jd-step-actions">
+                            <button className="jd-btn ghost" onClick={() => setStep(1)}>
+                                ← Back
+                            </button>
+                            <button
+                                className="jd-btn primary"
+                                disabled={loading}
+                                onClick={handleGenerateJd}
+                            >
+                                {loading ? (
+                                    <><div className="jd-spinner" /> Generating JD…</>
+                                ) : (
+                                    <>Generate JD <ArrowRight size={15} /></>
+                                )}
+                            </button>
                         </div>
-                    </details>
+                    </div>
+                </div>
+            )}
 
-                    <div className="step-nav">
-                        <button
-                            className="btn btn-secondary"
-                            onClick={() => setStep(5)}
-                        >
-                            <ArrowLeft size={14} /> Back to Draft
+            {/* ════════ STEP 3: Draft JD + Refine ════════ */}
+            {step === 3 && (
+                <div className="jd-step animate-fade-in-up">
+                    <div className="jd-create-grid">
+                        {/* Left: Refine chat */}
+                        <div className="jd-create-chat-col">
+                            <div className="jd-section-label">
+                                <Send size={14} />
+                                <span>Refine your JD</span>
+                                {chatHistory.length > 0 && (
+                                    <span className="jd-role-tag">v{chatHistory.length + 1}</span>
+                                )}
+                            </div>
+                            <div className="jd-refine-card">
+                                <p className="jd-refine-hint">
+                                    Tell the AI what to change. Each instruction updates the draft.
+                                </p>
+                                {chatHistory.length > 0 && (
+                                    <div className="jd-refine-history">
+                                        {chatHistory.map((entry, i) => (
+                                            <div key={i} className="jd-refine-entry">
+                                                <div className="jd-refine-user">
+                                                    <span className="jd-refine-badge">You</span>
+                                                    {entry.instruction}
+                                                </div>
+                                                <div className="jd-refine-ai">
+                                                    <CheckCircle2 size={13} /> Updated — v{entry.version + 1}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                <div className="jd-refine-input-row">
+                                    <input
+                                        className="jd-refine-input"
+                                        placeholder="e.g. Make it shorter / Add Python as a requirement"
+                                        value={chatInput}
+                                        onChange={e => setChatInput(e.target.value)}
+                                        onKeyDown={e => e.key === 'Enter' && applyRefinement()}
+                                        disabled={loading}
+                                    />
+                                    <button
+                                        className="jd-btn primary"
+                                        onClick={applyRefinement}
+                                        disabled={loading || !chatInput.trim()}
+                                    >
+                                        <Send size={14} /> Apply
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Right: JD Preview */}
+                        <div className="jd-create-preview-col">
+                            <div className="jd-section-label">
+                                <FileText size={14} />
+                                <span>Draft JD</span>
+                                <span className="jd-role-tag">{jobName}</span>
+                            </div>
+                            <div className="jd-preview-card">
+                                {finalJd ? (
+                                    <JdPreview markdown={finalJd} />
+                                ) : (
+                                    <div className="jd-preview-empty">
+                                        <FileText size={36} />
+                                        <p>Generating your JD…</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="jd-step-actions two-buttons">
+                        <button className="jd-btn ghost" onClick={() => setStep(2)}>
+                            ← Back to Questions
                         </button>
                         <button
-                            className="btn btn-primary"
-                            onClick={() => setStep(7)}
+                            className="jd-btn primary"
+                            disabled={!finalJd || loading}
+                            onClick={() => setStep(4)}
                         >
-                            Finalize & Export <ArrowRight size={14} />
+                            Finalize & Export <ArrowRight size={15} />
                         </button>
                     </div>
                 </div>
             )}
 
-            {/* ── STEP 7 — Export ── */}
-            {step === 7 && (
-                <div className="step-content animate-fade-in-up">
-                    <div className="alert alert-success mb-lg">
-                        🎉 Your Job Description is ready!
-                    </div>
+            {/* ════════ STEP 4: Export ════════ */}
+            {step === 4 && (
+                <div className="jd-step animate-fade-in-up">
+                    <div className="jd-export-card">
+                        <div className="jd-export-header">
+                            <CheckCircle2 size={20} />
+                            <div>
+                                <h3>Ready to export</h3>
+                                <p>{jobName}{chatHistory.length > 0 ? ` · ${chatHistory.length} refinement(s)` : ''}</p>
+                            </div>
+                        </div>
 
-                    <JdPreview markdown={finalJd} />
+                        <div className="jd-export-preview">
+                            <JdPreview markdown={finalJd} />
+                        </div>
 
-                    <details className="jd-details mt-lg">
-                        <summary>✏️ Manual Edit (optional)</summary>
-                        <div className="jd-details-body">
+                        <details className="jd-manual-edit">
+                            <summary>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <Edit3 size={16} /> <span>Manual Edit</span>
+                                </div>
+                                <span className="jd-edit-hint">Click to expand and edit Markdown</span>
+                            </summary>
                             <textarea
-                                className="textarea"
+                                className="jd-edit-textarea"
                                 rows={12}
                                 value={finalJd}
                                 onChange={(e) => setFinalJd(e.target.value)}
+                                placeholder="Edit the job description markdown here..."
+                            />
+                        </details>
+
+                        <div className="jd-closure-date">
+                            <label><Calendar size={14} /> Closure Date</label>
+                            <input
+                                type="date"
+                                value={closureDate}
+                                onChange={(e) => setClosureDate(e.target.value)}
                             />
                         </div>
-                    </details>
 
-                    <hr className="divider" />
-
-                    <h3 className="section-heading">📥 Download your JD</h3>
-                    <button
-                        className="btn btn-primary btn-block btn-lg"
-                        onClick={downloadDocx}
-                        disabled={loading}
-                        id="download-docx-btn"
-                    >
-                        {loading ? (
-                            <>
-                                <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
-                                Generating DOCX…
-                            </>
-                        ) : (
-                            <>
-                                <Download size={14} /> Download as DOCX
-                            </>
-                        )}
-                    </button>
-
-                    {chatHistory.length > 0 && (
-                        <p className="text-muted text-sm mt-md text-center">
-                            💾 {chatHistory.length} refinement(s) applied
-                        </p>
-                    )}
-
-                    <hr className="divider" />
-
-                    <button
-                        className="btn btn-secondary btn-block"
-                        onClick={startOver}
-                    >
-                        <RefreshCw size={14} /> Create Another JD
-                    </button>
+                        <div className="jd-export-actions">
+                            <div className="jd-export-btn-row">
+                                <button
+                                    className="jd-btn primary large"
+                                    onClick={downloadDocx}
+                                    disabled={loading}
+                                >
+                                    {loading ? (
+                                        <><div className="jd-spinner" /> Generating…</>
+                                    ) : (
+                                        <><Download size={16} /> Download DOCX</>
+                                    )}
+                                </button>
+                                <button
+                                    className="jd-btn accent large"
+                                    onClick={() => {
+                                        sessionStorage.setItem('jd_for_request', JSON.stringify({
+                                            role: jobName,
+                                            department: department,
+                                            jd: finalJd,
+                                            closure_date: closureDate,
+                                        }));
+                                        if (userId) {
+                                            api.analyzeMemory({
+                                                user_id: userId, initial_prompt: `${jobName} - ${experience}`,
+                                                final_jd: finalJd, edit_history: chatHistory,
+                                            }).catch(() => { });
+                                        }
+                                        navigate('/team-lead');
+                                    }}
+                                >
+                                    <Briefcase size={16} /> Use in Job Request
+                                </button>
+                            </div>
+                            <button className="jd-btn ghost" onClick={startOver}>
+                                <RefreshCw size={14} /> Start Over
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

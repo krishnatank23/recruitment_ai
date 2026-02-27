@@ -14,10 +14,9 @@ from apscheduler.jobstores.memory import MemoryJobStore
 
 from app.db.database import SessionLocal
 from app.db.models import (
-    JobRequest, JobStatus, JobProfile, User, UserRole,
+    JobRequest, JobStatus, User, UserRole,
     Notification, NotificationType,
-    Candidate, CandidateEvaluation, CandidateStage, BudgetFlag,
-    PipelineStageLog,
+    Candidate, CandidateEvaluation, CandidateStage,
 )
 
 logger = logging.getLogger("scheduler")
@@ -175,9 +174,11 @@ def run_auto_evaluation(job_id: int):
             if not existing_eval:
                 db.add(CandidateEvaluation(
                     candidate_id=cand.id,
-                    score=score,
+                    job_id=job_id,
+                    overall_score=score,
                     grade=grade,
-                    summary=f"Auto-evaluated candidate with score {score}/{grade}",
+                    recommendation=f"Auto-evaluated candidate with score {score}/{grade}",
+                    is_automated=True,
                 ))
 
         # Sort by score descending

@@ -15,8 +15,9 @@ env/
 # ── Environment / Secrets ──
 .env
 .env.*
-.streamlit/.secrets
-.streamlit/secrets.toml
+
+# ── Generated Exports ──
+exports/
 
 # ── Scripts ──
 /scripts
@@ -36,6 +37,7 @@ desktop.ini
 # ── Node / Frontend ──
 node_modules/
 frontend/dist/
+frontend/.vite/
 frontend/.cache/
 npm-debug.log*
 

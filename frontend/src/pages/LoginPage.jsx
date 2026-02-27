@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogIn, UserPlus, BriefcaseBusiness, Mail, Lock, User, ChevronDown } from 'lucide-react';
+import { LogIn, UserPlus, BriefcaseBusiness, Mail, Lock, User, ChevronDown, Building2 } from 'lucide-react';
 import * as api from '../services/api';
 import './LoginPage.css';
 
@@ -11,6 +11,7 @@ export default function LoginPage() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [role, setRole] = useState('team_lead');
+    const [department, setDepartment] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
@@ -20,7 +21,7 @@ export default function LoginPage() {
         setLoading(true);
         try {
             if (isRegister) {
-                await api.register(name, email, password, role);
+                await api.register(name, email, password, role, department);
             }
             const data = await api.login(email, password);
             const userRole = data.user?.role;
@@ -101,6 +102,18 @@ export default function LoginPage() {
                                 <option value="hr">HR</option>
                             </select>
                             <ChevronDown size={16} className="select-arrow" />
+                        </div>
+                    )}
+
+                    {isRegister && (
+                        <div className="form-group">
+                            <Building2 size={16} className="form-icon" />
+                            <input
+                                type="text"
+                                placeholder="Department (e.g. Engineering, HR)"
+                                value={department}
+                                onChange={(e) => setDepartment(e.target.value)}
+                            />
                         </div>
                     )}
 

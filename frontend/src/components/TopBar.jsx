@@ -91,7 +91,7 @@ export default function TopBar() {
                 {/* Notifications */}
                 <div className="topbar-notif-wrapper" ref={notifRef}>
                     <button className="topbar-icon-btn" aria-label="Notifications" onClick={toggleNotifs}>
-                        <Bell size={18} />
+                        <Bell size={20} strokeWidth={2.2} />
                         {unread > 0 && <span className="topbar-notif-dot">{unread}</span>}
                     </button>
 
@@ -132,7 +132,7 @@ export default function TopBar() {
                 </div>
 
                 <button className="topbar-icon-btn logout-btn" aria-label="Logout" onClick={handleLogout}>
-                    <LogOut size={18} />
+                    <LogOut size={20} strokeWidth={2.2} />
                 </button>
             </div>
         </header>

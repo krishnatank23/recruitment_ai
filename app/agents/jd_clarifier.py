@@ -24,7 +24,6 @@ CONTEXT FROM GOOGLE FORM:
 - Department: {department}
 - Location: {location}
 - Experience Level: {experience_level}
-- Employment Type: {employment_type}
 - Work Mode: {work_mode}
 - Must-Have Skills: {key_skills}
 - Key Responsibilities: {key_responsibilities}
@@ -174,7 +173,6 @@ def generate_clarifying_questions(form_data: dict) -> list:
     department = form_data.get("department", "General")
     location = form_data.get("location", "")
     experience = form_data.get("experience", "")
-    employment_type = form_data.get("employment_type", "Full-time")
     work_mode = form_data.get("work_mode", "")
     reporting_to = form_data.get("reporting_to", "")
     must_have_skills = form_data.get("must_have_skills", "")
@@ -196,7 +194,6 @@ def generate_clarifying_questions(form_data: dict) -> list:
         department=department,
         location=location,
         experience_level=experience,
-        employment_type=employment_type,
         work_mode=work_mode,
         key_skills=must_have_skills,
         key_responsibilities=key_responsibilities,
@@ -238,29 +235,20 @@ def generate_clarifying_questions(form_data: dict) -> list:
 # CLI TEST
 # ============================================================
 if __name__ == "__main__":
-    from app.utils.google_form_loader import fetch_google_form_data
+    sample = {
+        "role": "AI Engineer",
+        "department": "Engineering",
+        "location": "Remote",
+        "experience": "3-5 years",
+        "work_mode": "Remote",
+        "must_have_skills": "Python, ML, LLMs",
+        "key_responsibilities": "Build AI agents",
+        "reporting_to": "Tech Lead",
+    }
 
-    rows = fetch_google_form_data()
-    if not rows:
-        print("No Google Form data found.")
-        exit(1)
+    questions = generate_clarifying_questions(form_data=sample)
 
-    print("\nSelect a job role:\n")
-    for i, r in enumerate(rows, start=1):
-        print(f"{i}. {r.get('role', 'UNKNOWN')} ({r.get('department', '')})")
-
-    choice = input("\nEnter role number: ").strip()
-    try:
-        selected = rows[int(choice) - 1]
-    except Exception:
-        print("Invalid selection")
-        exit(1)
-
-    questions = generate_clarifying_questions(form_data=selected)
-
-    print(
-        f"\n========== CLARIFYING QUESTIONS FOR {selected.get('role', '').upper()} ==========\n"
-    )
+    print(f"\n========== CLARIFYING QUESTIONS FOR {sample['role'].upper()} ==========\n")
 
     if not questions:
         print("No questions generated.")
